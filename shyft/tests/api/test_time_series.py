@@ -193,7 +193,7 @@ class TimeSeries(unittest.TestCase):
 
         a = api.TimeSeries(ta=ta, fill_value=3.0, point_fx=api.point_interpretation_policy.POINT_AVERAGE_VALUE)
         self.assertTrue(a)  # should evaluate to true
-        b = api.TimeSeries(ta=ta, fill_value=1.0,point_fx=api.point_interpretation_policy.POINT_INSTANT_VALUE)
+        b = api.TimeSeries(ta=ta, fill_value=1.0, point_fx=api.point_interpretation_policy.POINT_INSTANT_VALUE)
         b.fill(2.0)  # demo how to fill a point ts
         self.assertAlmostEqual((1.0 - b).values.to_numpy().max(), -1.0)
         self.assertAlmostEqual((b - 1.0).values.to_numpy().max(), 1.0)
@@ -595,6 +595,13 @@ class TimeSeries(unittest.TestCase):
         self.assertIsNotNone(bind_expr_ts)
         self.assertAlmostEqual(bind_expr_ts.value(0), 3.0*a.value(0))  # just to check, its for real
 
+    def test_ts_stringify(self):
+        a=api.TimeSeries('a')
+        b=api.TimeSeries('b')
+        c= a+b
+        s_a= api.ts_stringify(a)
+        s_a= api.ts_stringify(c)
+        self.assertIsNotNone(s_a)
 
     def test_a_time_series_vector(self):
         c = api.Calendar()
@@ -779,6 +786,27 @@ class TimeSeries(unittest.TestCase):
         except RuntimeError as re:
             pass
 
+        # also test that empty vector + vector -> vector etc.
+        va_2 = va + api.TsVector()
+        va_3 = api.TsVector() + va
+        va_4 = va - api.TsVector()
+        va_5 = api.TsVector() - va
+        va_x = api.TsVector() + api.TsVector()
+        self.assertEqual(len(va_2), len(va))
+        self.assertEqual(len(va_3), len(va))
+        self.assertEqual(len(va_4), len(va))
+        self.assertEqual(len(va_5), len(va))
+        self.assertEqual(not va_x, True)
+        self.assertEqual(not va_2, False)
+        va_2_ok = False
+        va_x_ok = True
+        if va_2:
+            va_2_ok = True
+        if va_x:
+            va_x_ok = False
+        self.assertTrue(va_2_ok)
+        self.assertTrue(va_x_ok)
+
     def test_ts_extend(self):
         t0 = api.utctime_now()
         dt = api.deltahours(1)
@@ -849,6 +877,16 @@ class TimeSeries(unittest.TestCase):
             self.assertEqual(ad(t0 + (2*n + i)*dt), 5.5)
         for i in range(2*n):  # extension
             self.assertEqual(ad(t0 + (3*n + i)*dt), 8.0)
+
+        # check extend with more exotic combination of time-axis(we had an issue with this..)
+        a = api.TimeSeries(api.TimeAxis(0, 1, 10), fill_value=1.0, point_fx=api.POINT_AVERAGE_VALUE)
+        b = api.TimeSeries(api.TimeAxis(api.Calendar(), 0, 1, 20), fill_value=2.0, point_fx=api.POINT_AVERAGE_VALUE)
+        ab = a.extend(b)
+        ba = b.extend(a, split_policy=api.extend_split_policy.AT_VALUE, split_at=a.time_axis.time(5))
+        self.assertAlmostEqual(ab.value(0), 1.0)
+        self.assertAlmostEqual(ab.value(11), 2.0)
+        self.assertAlmostEqual(ba.value(0), 2.0)
+        self.assertAlmostEqual(ab.value(7), 1.0)
 
     def test_extend_vector_of_timeseries(self):
         t0 = api.utctime_now()
@@ -941,7 +979,8 @@ class TimeSeries(unittest.TestCase):
 
         self.assertEqual(len(rcsts_2), len(ts))
         for i in range(rcsts_2.size()):
-            expected = (1*ts.get(i).v if ts.get(i).v < 5 else 2*ts.get(i).v) if ts.get(i).t < t0 + api.deltahours(24) else (3*ts.get(i).v if ts.get(i).v < 8 else 4*ts.get(i).v)
+            expected = (1*ts.get(i).v if ts.get(i).v < 5 else 2*ts.get(i).v) if ts.get(i).t < t0 + api.deltahours(24) else (
+                3*ts.get(i).v if ts.get(i).v < 8 else 4*ts.get(i).v)
             self.assertEqual(rcsts_2.get(i).t, ts.get(i).t)
             self.assertEqual(rcsts_2.get(i).v, expected)
 
@@ -979,7 +1018,8 @@ class TimeSeries(unittest.TestCase):
         try:
             ts.get_krls_predictor()
             self.fail("should not be able to get predictor for unbound")
-        except: pass
+        except:
+            pass
 
         fbi = ts.find_ts_bind_info()
         fbi[0].ts.bind(ts_data)
@@ -995,6 +1035,61 @@ class TimeSeries(unittest.TestCase):
             self.assertAlmostEqual(ts_krls.values[i], ts_data.values[i], places=1)
             self.assertAlmostEqual(ts_mse.values[i], 0, places=2)
         self.assertAlmostEqual(pred.predictor_mse(ts_data), 0, places=2)
+
+    def test_average_outside_give_nan(self):
+        ta1 = api.TimeAxis(0, 10, 10)
+        ta2 = api.TimeAxis(-10, 10, 21)
+        tsa = api.TimeSeries(ta1, fill_value=1.0, point_fx=api.POINT_AVERAGE_VALUE)
+        tsb = tsa.average(ta2)
+        self.assertTrue(math.isnan(tsb.value(11)))  # nan when a ends
+        self.assertTrue(math.isnan(tsb.value(0)))  # nan before first a
+        tsa = api.TimeSeries(ta1, fill_value=1.0, point_fx=api.POINT_INSTANT_VALUE)
+        tsb = tsa.average(ta2)
+        self.assertTrue(math.isnan(tsb.value(10)))  # notice we get one less due to linear-between, it ends at last point in tsa.
+        self.assertTrue(math.isnan(tsb.value(0)))
+
+    def test_integral_fine_resolution(self):
+        """ Case study for last-interval bug from python"""
+        utc = api.Calendar()
+        ta = api.TimeAxis(utc.time(2017, 10, 16), api.deltahours(24*7), 219)
+        tf = api.TimeAxis(utc.time(2017, 10, 16), api.deltahours(3), 12264)
+        src = api.TimeSeries(ta, fill_value=1.0, point_fx=api.POINT_AVERAGE_VALUE)
+        ts = src.integral(tf)
+        self.assertIsNotNone(ts)
+        for i in range(len(tf)):
+            if not math.isclose(ts.value(i), 1.0*api.deltahours(3)):
+                self.assertAlmostEqual(ts.value(i), 1.0*api.deltahours(3))
+
+    def test_calibration_ts_case(self):
+        times = [0, 3600, 3600 + 2*3600]
+        ta = api.TimeAxis(api.UtcTimeVector(times[0:-1]), times[-1])
+        values = api.DoubleVector([0.0]*(len(times) - 1))
+        ts = api.TimeSeries(ta, values, point_fx=api.point_interpretation_policy.POINT_AVERAGE_VALUE)
+        target = api.TargetSpecificationPts(ts, api.IntVector([0]), 1.0, api.ABS_DIFF, 1.0, 1.0, 1.0, api.CELL_CHARGE, 'water_balance')
+        self.assertIsNotNone(target)
+
+    def test_min_max_check_linear_fill(self):
+        ta = api.TimeAxis(0, 1, 5)
+        ts_src = api.TimeSeries(ta, values=api.DoubleVector([1.0, -1.0, 2.0, float('nan'), 4.0]), point_fx=api.POINT_AVERAGE_VALUE)
+        ts_qac = ts_src.min_max_check_linear_fill(v_max=10.0, v_min=-10.0, dt_max=300)
+        self.assertAlmostEqual(ts_qac.value(3), 3.0)
+        ts_qac = ts_src.min_max_check_linear_fill(v_max=10.0, v_min=0.0, dt_max=300)
+        self.assertAlmostEqual(ts_qac.value(1), 1.5)  # -1 out, replaced with linear between
+        self.assertAlmostEqual(ts_qac.value(3), 3.0)
+        ts_qac = ts_src.min_max_check_linear_fill(v_max=10.0, v_min=0.0, dt_max=0)
+        self.assertTrue(not math.isfinite(ts_qac.value(3)))  # should give nan, not allowed to fill in
+        self.assertTrue(not math.isfinite(ts_qac.value(1)))  # should give nan, not allowed to fill in
+
+    def test_min_max_check_ts_fill(self):
+        ta = api.TimeAxis(0, 1, 5)
+        ts_src = api.TimeSeries(ta, values=api.DoubleVector([1.0, -1.0, 2.0, float('nan'), 4.0]), point_fx=api.POINT_AVERAGE_VALUE)
+        cts = api.TimeSeries(ta, values=api.DoubleVector([1.0, 1.8, 2.0, 2.0, 4.0]), point_fx=api.POINT_AVERAGE_VALUE)
+        ts_qac = ts_src.min_max_check_ts_fill(v_max=10.0, v_min=-10.0, dt_max=300, cts=cts)
+        self.assertAlmostEqual(ts_qac.value(3), 2.0)
+        ts_qac = ts_src.min_max_check_ts_fill(v_max=10.0, v_min=0.0, dt_max=300, cts=cts)
+        self.assertAlmostEqual(ts_qac.value(1), 1.8)  # -1 out, replaced with linear between
+        self.assertAlmostEqual(ts_qac.value(3), 2.0)
+        # ref dtss test for serialization testing
 
 
 if __name__ == "__main__":

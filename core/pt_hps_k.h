@@ -6,8 +6,6 @@
 #include <limits>
 #include <stdexcept>
 
-#include "core_pch.h"
-
 #include "priestley_taylor.h"
 #include "kirchner.h"
 #include "hbv_physical_snow.h"
@@ -164,6 +162,11 @@ namespace shyft {
              : hps(hps), kirchner(kirchner) { /* Do nothing */ }
             state(const state& state) : hps(state.hps), kirchner(state.kirchner) {}
             bool operator==(const state& x) const {return hps==x.hps && kirchner==x.kirchner;}
+            /**adjust kirchner q with the  specified scale-factor
+            * to support the process of tuning output of a step
+            * to a specified observed/wanted average
+            */
+            void adjust_q(double scale_factor) {kirchner.adjust_q(scale_factor);}
             x_serialize_decl();
         };
 

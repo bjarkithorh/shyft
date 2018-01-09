@@ -1,18 +1,36 @@
 # CMake configuration for tests
 
 # Sources
-file(GLOB cpps *.cpp)
-list(REMOVE_ITEM cpps "test_pch.cpp")
-file(GLOB headers *.h)
-set(sources ${cpps} ${headers})
+#file(GLOB cpps *.cpp)
+#list(REMOVE_ITEM cpps "test_pch.cpp")
+#file(GLOB headers *.h)
+set(sources actual_evapotranspiration_test.cpp api_test.cpp calibration_test.cpp cell_builder_test.cpp dtss_test.cpp
+    gamma_snow_test.cpp glacier_melt_test.cpp gridpp_test.cpp hbv_actual_evapotranspiration_test.cpp hbv_snow_test.cpp hbv_soil_test.cpp
+    hbv_stack_test.cpp hbv_tank_test.cpp inverse_distance_test.cpp kalman_test.cpp kirchner_test.cpp kriging_test.cpp max_abs_average_accessor_test.cpp
+    merge_test.cpp mocks.cpp predictor_test.cpp priestley_taylor_test.cpp pt_gs_k_test.cpp pt_hs_k_test.cpp pt_ss_k_test.cpp qm_test.cpp
+    region_model_test.cpp routing_test.cpp runner.cpp sceua_test.cpp serialization_test.cpp skaugen_test.cpp time_axis_test.cpp 
+    time_series_average_test.cpp time_series_fixup_test.cpp time_series_test.cpp utctime_utilities_test.cpp hbv_physical_snow_test.cpp
+    pt_hps_k_test.cpp
+)
 set(target "test_shyft")
 
 # Flags
 add_definitions("-D__UNIT_TEST__ -DVERBOSE=0 ")
 find_package(PNG REQUIRED)
+find_package(LAPACK REQUIRED)
+
 add_executable(${target} ${sources})
 # Additional libraries
-target_link_libraries(${target} shyftcore shyftapi blas lapack boost_filesystem boost_system boost_serialization dlib ${PNG_LIBRARY} )
+target_link_libraries(${target} 
+ shyftcore shyftapi 
+ ${SHYFT_DEPENDENCIES}/lib/libboost_filesystem.so 
+ ${SHYFT_DEPENDENCIES}/lib/libboost_system.so 
+ ${SHYFT_DEPENDENCIES}/lib/libboost_serialization.so 
+ ${SHYFT_DEPENDENCIES}/lib/libdlib.so 
+ ${PNG_LIBRARY} ${LAPACK_LIBRARIES} 
+)
+#set_target_properties(${target} PROPERTIES INSTALL_RPATH "$ORIGIN/../../shyft/lib")
+#install(TARGETS ${target} DESTINATION ${CMAKE_SOURCE_DIR}/bin/Release)
 
 # This can be made more specific, but we would need the list of tests.
 #add_test(${target} ${target})
@@ -52,6 +70,7 @@ add_test(dtss ${target} -nv --test-suite=dtss)
 add_test(qm ${target} -nv --test-suite=qm)
 add_test(predictors ${target} -nv --test-suite=predictors)
 add_test(ts_merge ${target} -nv --test-suite=ts_merge)
-
+add_test(pt_hps_k ${target} -nv --test-suite=pt_hps_k)
+add_test(hbv_physical_snow ${target} --test-suite=hbv_physical_snow)
 
 

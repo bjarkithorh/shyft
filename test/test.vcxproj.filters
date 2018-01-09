@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClInclude Include="mocks.h">
@@ -106,17 +106,29 @@
     <ClCompile Include="time_series_test.cpp">
       <Filter>time_series</Filter>
     </ClCompile>
-    <ClCompile Include="qm_test.cpp" />
     <ClCompile Include="merge_test.cpp">
       <Filter>time_series</Filter>
     </ClCompile>
-    <ClCompile Include="predictor_test.cpp" />
-    <ClCompile Include="time_series_average_test.cpp" />
     <ClCompile Include="hbv_physical_snow_test.cpp">
       <Filter>methods</Filter>
     </ClCompile>
     <ClCompile Include="pt_hps_k_test.cpp">
       <Filter>method-stacks</Filter>
+    </ClCompile>
+    <ClCompile Include="max_abs_average_accessor_test.cpp">
+      <Filter>optimizers</Filter>
+    </ClCompile>
+    <ClCompile Include="predictor_test.cpp">
+      <Filter>time_series</Filter>
+    </ClCompile>
+    <ClCompile Include="qm_test.cpp">
+      <Filter>time_series</Filter>
+    </ClCompile>
+    <ClCompile Include="time_series_average_test.cpp">
+      <Filter>time_series</Filter>
+    </ClCompile>
+    <ClCompile Include="time_series_fixup_test.cpp">
+      <Filter>time_series</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

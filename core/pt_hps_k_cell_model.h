@@ -8,7 +8,6 @@
 #include <limits>
 #include <stdexcept>
 
-#include "core_pch.h"
 #include "cell_model.h"
 #include "pt_hps_k.h"
 

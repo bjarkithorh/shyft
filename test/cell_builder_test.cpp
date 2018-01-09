@@ -1,9 +1,10 @@
 #include "test_pch.h"
 #include "core/experimental.h"
 #include "core/model_calibration.h"
+#include "core/model_state_tuning.h"
 
-#include <boost/archive/binary_iarchive.hpp>
-#include <boost/archive/binary_oarchive.hpp>
+#include "core/core_archive.h"
+
 #include <boost/serialization/access.hpp>
 #include <boost/serialization/vector.hpp>
 #include <boost/serialization/shared_ptr.hpp>
@@ -172,6 +173,9 @@ TEST_CASE("cell_builder_test::test_read_and_run_region_model") {
 	const char *test_path = "neanidelv";
 	using namespace shyft::experimental;
 	using namespace shyft::experimental::repository;
+	using shyft::core::core_oarchive;
+	using shyft::core::core_iarchive;
+	using shyft::core::core_nvp;
 	// define a cell type
 	typedef ec::pt_gs_k::cell_discharge_response_t cell_t;
 	// and a region model for that cell-type
@@ -180,11 +184,7 @@ TEST_CASE("cell_builder_test::test_read_and_run_region_model") {
 	cout << endl << "1. Reading cells from files" << endl;
     auto cells = make_shared<vector<cell_t>>();
     auto global_parameter = make_shared<cell_t::parameter_t>();
-#ifdef _WIN32
-    const char *cell_path = "neanidelv/geo_cell_data.v2.win.bin";
-#else
-    const char *cell_path = "neanidelv/geo_cell_data.v2.bin";
-#endif
+    const char *cell_path = "neanidelv/geo_cell_data.v3.bin";
     bool verbose = getenv("SHYFT_VERBOSE") != nullptr;
     std::string geo_xml_fname = shyft::experimental::io::test_path(cell_path, false);
     if ( !boost::filesystem::is_regular_file(boost::filesystem::path(geo_xml_fname))) {
@@ -196,15 +196,15 @@ TEST_CASE("cell_builder_test::test_read_and_run_region_model") {
         gcd.reserve(cells->size());
         for (const auto&c : *cells) gcd.push_back(c.geo);
         std::ofstream geo_cell_xml_file(geo_xml_fname,ios::binary);
-        boost::archive::binary_oarchive oa(geo_cell_xml_file);
-        oa << BOOST_SERIALIZATION_NVP(gcd);
+        core_oarchive oa(geo_cell_xml_file,core_arch_flags);
+        oa << core_nvp("gcd",gcd);
     }
 
     {
         std::vector<shyft::core::geo_cell_data> gcd;gcd.reserve(5000);
         std::ifstream geo_cell_xml_file(geo_xml_fname,ios::binary);
-        boost::archive::binary_iarchive ia(geo_cell_xml_file);
-        ia >> BOOST_SERIALIZATION_NVP(gcd);
+        core_iarchive ia(geo_cell_xml_file,core_arch_flags);
+        ia >> core_nvp("gcd",gcd);
         cells->reserve(gcd.size());
         cell_t::state_t s0;
         s0.kirchner.q = 100.0;
@@ -272,8 +272,21 @@ TEST_CASE("cell_builder_test::test_read_and_run_region_model") {
     auto avg_precip_ip_o_set_value2 = et::average_accessor<et::pts_t, ta::fixed_dt>(avg_precip_ip_o_set2, ta_one_step).value(0);
     FAST_CHECK_LT(std::abs(avg_precip_ip_set_value - avg_precip_ip_set_value2), 0.0001);
     FAST_CHECK_GT(avg_precip_ip_o_set_value2, 0.05);
-    //cout << "full:avg precip for selected    catchments is:" << avg_precip_ip_set_value2 << endl;
-    //cout << "full:avg precip for unselected  catchments is:" << avg_precip_ip_o_set_value2 << endl;
+    cout <<"3.  b.ii verify tune_flow to observed values"<<endl;
+    rm.get_states(rm.initial_state);
+    double q_wanted=70.0;
+    ec::adjust_state_model<region_model_t> adj_rm(rm,all_catchment_ids,0);
+    double q_0 = adj_rm.discharge(1.0);
+    double q_adjusted = adj_rm.tune_flow(q_wanted);
+    TS_ASSERT_DELTA(q_adjusted,q_wanted,0.1);
+    if(verbose) {cout<<"Result for using all cells: q_0= "<< q_0<<", q_wanted="<<q_wanted<<", q_adjusted="<<q_adjusted<<endl;}
+    adj_rm.cids=catchment_ids; // juse a few
+    double q_wanted_2=34.21;
+    double q_adjusted_2 = adj_rm.tune_flow(q_wanted_2);
+    TS_ASSERT_DELTA(q_adjusted_2,q_wanted_2,0.1);
+    if(verbose) {cout<<"Results for using 2 cells:  "<< ", q_wanted="<<q_wanted_2<<", q_adjusted_2="<<q_adjusted_2<<endl;}
+
+    rm.revert_to_initial_state();// revert to state prior to state-adjustments.
     cout << "3. c Verify best_effort interpolation";
     auto re_temperature = *(re.temperature);
     for(auto& gts:*(re.temperature)) {
@@ -426,11 +439,16 @@ TEST_CASE("cell_builder_test::test_read_and_run_region_model") {
     auto orig_parameter= *global_parameter;
 	vector<bool> calibrate_parameter(n_params, false);
     // 25 is routing velocity
-	for (auto i : vector<int>{ 0,4,14,16,25 }) calibrate_parameter[i] = true;
+	for (auto i : vector<int>{ 0,4,14,16,22}) calibrate_parameter[i] = true;
 	for (size_t i = 0; i < n_params; ++i) {
 		double v = pa.get(i);
-		lower.emplace_back(calibrate_parameter[i] ? 0.7*v : v);
-		upper.emplace_back(calibrate_parameter[i] ? 1.2*v : v);
+		if (i!=22) {
+            lower.emplace_back(calibrate_parameter[i] ? 0.7*v : v);
+            upper.emplace_back(calibrate_parameter[i] ? 1.2*v : v);
+		} else {
+		    lower.emplace_back(calibrate_parameter[i] ? 100 : v);
+		    upper.emplace_back(calibrate_parameter[i] ? 250 : v);;
+		}
 	}
 	// Perturb parameter set
 	std::vector<double> x(n_params);

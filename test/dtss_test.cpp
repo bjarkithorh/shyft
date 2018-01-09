@@ -2,11 +2,12 @@
 
 #include "core/dtss.h"
 #include "core/dtss_cache.h"
+#include "core/dtss_client.h"
 
 #include "core/utctime_utilities.h"
 #include "core/time_axis.h"
 #include "core/time_series_merge.h"
-#include "api/time_series.h"
+#include "core/time_series_dd.h"
 
 
 #include <future>
@@ -30,13 +31,15 @@ namespace  fs=boost::filesystem;
 using namespace std;
 using namespace shyft;
 using namespace shyft::core;
+using shyft::time_series::dd::apoint_ts;
+using shyft::time_series::dd::gta_t;
 
-api::apoint_ts mk_expression(utctime t, utctimespan dt, int n) {
+apoint_ts mk_expression(utctime t, utctimespan dt, int n) {
 
     std::vector<double> x; x.reserve(n);
     for (int i = 0; i < n; ++i)
         x.push_back(-double(n) / 2.0 + i);
-    api::apoint_ts aa(api::gta_t(t, dt, n), x);
+    apoint_ts aa(gta_t(t, dt, n), x);
     auto a = aa*3.0 + aa;
     return a;
 }
@@ -54,8 +57,8 @@ TEST_CASE("dtss_lru_cache") {
 	using std::vector;
 	using std::string;
 	using std::back_inserter;
-	using shyft::api::apoint_ts;
-	using shyft::api::gta_t;
+	using shyft::time_series::dd::apoint_ts;
+	using shyft::time_series::dd::gta_t;
 	const auto stair_case=shyft::time_series::POINT_AVERAGE_VALUE;
 	lru_cache<string, apoint_ts, map > c(2);
 
@@ -118,8 +121,8 @@ TEST_CASE("dtss_ts_cache") {
     using shyft::core::utctime;
     using shyft::core::deltahours;
     using shyft::dtss::cache_stats;
-    using shyft::api::apoint_ts;
-    using shyft::api::gta_t;
+    using shyft::time_series::dd::apoint_ts;
+    using shyft::time_series::dd::gta_t;
     using shyft::dtss::apoint_ts_frag;
     using dtss_cache=shyft::dtss::cache<apoint_ts_frag,apoint_ts>;
     const auto stair_case=shyft::time_series::POINT_AVERAGE_VALUE;
@@ -315,8 +318,8 @@ TEST_CASE("dlib_server_basics") {
         auto dt24 = deltahours(24);
         int n = 240;
         int n24 = n / 24;
-        shyft::time_axis::fixed_dt ta(t, dt, n);
-        api::gta_t ta24(t, dt24, n24);
+        time_axis::fixed_dt ta(t, dt, n);
+        gta_t ta24(t, dt24, n24);
         bool throw_exception = false;
         read_call_back_t cb = [ta, &throw_exception](id_vector_t ts_ids, core::utcperiod p)
             ->ts_vector_t {
@@ -363,17 +366,17 @@ TEST_CASE("dlib_server_basics") {
         {
             string host_port = string("localhost:") + to_string(port_no);
             dlog << dlib::LINFO << "sending an expression ts to " << host_port ;
-            std::vector<api::apoint_ts> tsl;
+            std::vector<apoint_ts> tsl;
             for (size_t kb = 4;kb < 16;kb += 2)
-                tsl.push_back(mk_expression(t, dt, kb * 1000)*api::apoint_ts(string("netcdf://group/path/ts") + std::to_string(kb)));
+                tsl.push_back(mk_expression(t, dt, kb * 1000)*apoint_ts(string("netcdf://group/path/ts") + std::to_string(kb)));
             client dtss(host_port);
-            auto ts_b = dtss.evaluate(tsl, ta.total_period());
+            auto ts_b = dtss.evaluate(tsl, ta.total_period(),false,false);
             dlog << dlib::LINFO << "Got vector back, size= " << ts_b.size();
             for (const auto& ts : ts_b)
                 dlog << dlib::LINFO << "ts.size()" << ts.size();
             dlog << dlib::LINFO << "testing 2 time:";
             FAST_REQUIRE_UNARY(our_server.is_running());
-            dtss.evaluate(tsl, ta.period(0));
+            dtss.evaluate(tsl, ta.period(0),false,false);
             dlog << dlib::LINFO << "done second test";
             // test search functions
             dlog << dlib::LINFO << "test .find function";
@@ -383,14 +386,14 @@ TEST_CASE("dlib_server_basics") {
             dlog << dlib::LINFO << "test .find function done";
 
             throw_exception = true;// verify server-side exception gets back here.
-            TS_ASSERT_THROWS_ANYTHING(dtss.evaluate(tsl, ta.period(0)));
+            TS_ASSERT_THROWS_ANYTHING(dtss.evaluate(tsl, ta.period(0),false,false));
             dlog<<dlib::LINFO << "exceptions done,testing ordinary evaluate after exception";
             throw_exception = false;// verify server-side exception gets back here.
-            dtss.evaluate(tsl, ta.period(0)); // verify no exception here, should still work ok
+            dtss.evaluate(tsl, ta.period(0),false,false); // verify no exception here, should still work ok
             FAST_REQUIRE_UNARY(our_server.is_running());
             dlog << dlib::LINFO << "ok, -now testing percentiles";
-            std::vector<int> percentile_spec{ 0,25,50,-1,75,100 };
-            auto percentiles = dtss.percentiles(tsl, ta.total_period(), ta24, percentile_spec);
+            std::vector<int64_t> percentile_spec{ 0,25,50,-1,75,100 };
+            auto percentiles = dtss.percentiles(tsl, ta.total_period(), ta24, percentile_spec,false,false);
             FAST_CHECK_EQ(percentiles.size(), percentile_spec.size());
             FAST_CHECK_EQ(percentiles[0].size(), ta24.size());
             dlog << dlib::LINFO << "done with percentiles, stopping localhost server";
@@ -403,11 +406,76 @@ TEST_CASE("dlib_server_basics") {
     }
     dlog << dlib::LINFO << "done";
 }
+
+TEST_CASE("dlib_multi_server_basics") {
+    dlog.set_level(dlib::LALL);
+    dlib::set_all_logging_output_streams(std::cout);
+    dlib::set_all_logging_levels(dlib::LALL);
+    dlog << dlib::LINFO << "Starting dtss multi-test";
+    using namespace shyft::dtss;
+    try {
+        calendar utc;
+        auto t = utc.time(2016, 1, 1);
+        auto dt = deltahours(1);
+        auto dt24 = deltahours(24);
+        int n = 240;
+        int n24 = n / 24;
+        time_axis::fixed_dt ta(t, dt, n);
+        gta_t ta24(t, dt24, n24);
+        read_call_back_t rcb = [ta](id_vector_t ts_ids, core::utcperiod p)
+            ->ts_vector_t {
+            ts_vector_t r; r.reserve(ts_ids.size());
+            double fv = 1.0;
+            for (size_t i = 0; i < ts_ids.size(); ++i)
+                r.emplace_back(ta, fv += 1.0);
+            return r;
+        };
+
+        size_t n_servers=2;
+        vector<unique_ptr<server>> servers;
+        vector<string> host_ports;
+        int base_port=21000;
+        for(size_t i=0;i<n_servers;++i) {
+            auto srv = make_unique<server>(rcb);
+            srv->set_listening_ip("127.0.0.1");
+            srv->set_listening_port(base_port +i);
+            srv->start_async();
+            servers.emplace_back(move(srv));
+            host_ports.push_back(string("localhost:") + to_string(base_port + i));
+        }
+        {
+            dlog << dlib::LINFO << "sending an expression ts to "<<n_servers<< " hosts" ;
+            std::vector<apoint_ts> tsl;
+            for (size_t kb = 4;kb < 16;kb += 2)
+                tsl.push_back(mk_expression(t, dt, kb * 1000)*apoint_ts(string("netcdf://group/path/ts") + std::to_string(kb)));
+
+            client c(host_ports,false,1000);
+            auto ts_b = c.evaluate(tsl, ta.total_period(),true,true);
+            dlog << dlib::LINFO << "Got vector back, size= " << ts_b.size();
+            for (const auto& ts : ts_b)
+                dlog << dlib::LINFO << "ts.size()" << ts.size();
+            dlog << dlib::LINFO << "ok, -now testing percentiles";
+            std::vector<int64_t> percentile_spec{ 0,25,50,-1,75,100 };
+            auto percentiles = c.percentiles(tsl, ta.total_period(), ta24, percentile_spec,true,true);
+            FAST_CHECK_EQ(percentiles.size(), percentile_spec.size());
+            FAST_CHECK_EQ(percentiles[0].size(), ta24.size());
+            dlog << dlib::LINFO << "done with percentiles, stopping localhost server";
+            c.close();
+            for(size_t i =0;i<n_servers;++i)
+                servers[i]->clear();
+            dlog << dlib::LINFO << "done";
+        }
+    } catch (exception& e) {
+        cout << e.what() << endl;
+    }
+    dlog << dlib::LINFO << "done";
+}
+
 TEST_CASE("dlib_server_performance") {
     dlog.set_level(dlib::LALL);
     dlib::set_all_logging_output_streams(std::cout);
     dlib::set_all_logging_levels(dlib::LALL);
-    dlog << dlib::LINFO << "Starting dtss test";
+    dlog << dlib::LINFO << "Starting dtss server performance test";
     using namespace shyft::dtss;
     try {
         // Tell the server to begin accepting connections.
@@ -418,8 +486,8 @@ TEST_CASE("dlib_server_performance") {
         int n = 24 * 365 * 5;// 5years of hourly data
         int n24 = n / 24;
         int n_ts = 10;//83;
-        shyft::time_axis::fixed_dt ta(t, dt, n);
-        api::gta_t ta24(t, dt24, n24);
+        gta_t ta(t, dt, n);
+        gta_t ta24(t, dt24, n24);
         bool throw_exception = false;
 		ts_vector_t from_disk; from_disk.reserve(n_ts);
 		double fv = 1.0;
@@ -449,15 +517,15 @@ TEST_CASE("dlib_server_performance") {
                     async(launch::async, [port_no,ta,ta24,i,n_ts]()         /** thread this */ {
                     string host_port = string("localhost:") + to_string(port_no);
                     dlog << dlib::LINFO << "sending an expression ts to " << host_port;
-                    std::vector<api::apoint_ts> tsl;
+                    std::vector<apoint_ts> tsl;
 					for (int x = 1; x <= n_ts; ++x) {// just make a  very thin request, that get loads of data back
 #if 0
-						auto ts_expr = api::apoint_ts(string("netcdf://group/path/ts_") + std::to_string(x));
+						auto ts_expr = apoint_ts(string("netcdf://group/path/ts_") + std::to_string(x));
 						tsl.push_back(ts_expr);
 #else
-						auto ts_expr = 10.0 + 3.0*api::apoint_ts(string("netcdf://group/path/ts_") + std::to_string(x));
+						auto ts_expr = 10.0 + 3.0*apoint_ts(string("netcdf://group/path/ts_") + std::to_string(x));
 						if (x > 1) {
-							ts_expr = ts_expr - 3.0*api::apoint_ts(string("netcdf://group/path/ts_") + std::to_string(x - 1));
+							ts_expr = ts_expr - 3.0*apoint_ts(string("netcdf://group/path/ts_") + std::to_string(x - 1));
 						}
 						tsl.push_back(ts_expr.average(ta));
 #endif
@@ -470,8 +538,8 @@ TEST_CASE("dlib_server_performance") {
                     int kilo_points= tsl.size()*ta.size()/1000;
                     while (elapsed_ms(t0, timing::now()) < test_duration_ms) {
                         // burn cpu server side, save time on serialization
-                        std::vector<int> percentile_spec{ -1 };
-                        auto percentiles = dtss.percentiles(tsl, ta.total_period(), ta24, percentile_spec);
+                        std::vector<int64_t> percentile_spec{ -1 };
+                        auto percentiles = dtss.percentiles(tsl, ta.total_period(), ta24, percentile_spec,false,false);
                         //slower due to serialization:
                         //auto ts_b = dtss.evaluate(tsl, ta.total_period());
                         ++eval_count;
@@ -486,18 +554,22 @@ TEST_CASE("dlib_server_performance") {
                 )
             );
         }
+        dlog << dlib::LINFO << "waiting for test to complete";
+
         for (auto &f : clients) f.get();
         our_server.clear();
         dlog << dlib::LINFO << "done";
-
     } catch (exception& e) {
         cout << e.what() << endl;
+        dlog<<dlib::LERROR<<"exception:"<<e.what();
     }
     dlog << dlib::LINFO << "done";
 }
 TEST_CASE("dtss_store_basics") {
         using namespace shyft::dtss;
-        using namespace shyft::api;
+		using namespace shyft::time_series::dd;
+		using time_series::point_ts;
+
         std::shared_ptr<core::calendar> utc = std::make_shared<core::calendar>();
         std::shared_ptr<core::calendar> osl = std::make_shared<core::calendar>("Europe/Oslo");
 
@@ -513,12 +585,13 @@ TEST_CASE("dtss_store_basics") {
 
         vector<utctime> tp;for(std::size_t i=0;i<fta.size();++i)tp.push_back(fta.time(i));
         time_axis::point_dt pta(tp,fta.total_period().end);
+        dlog << dlib::LINFO << "starting store basics";
 
         auto tmpdir = (fs::temp_directory_path()/"ts.db.test");
         ts_db db(tmpdir.string());
 
-        SUBCASE("store_fixed_dt") {
-            gts_t o(fta,10.0,time_series::ts_point_fx::POINT_AVERAGE_VALUE);
+        TEST_SECTION("store_fixed_dt") {
+            gts_t o(gta_t(fta),10.0,time_series::ts_point_fx::POINT_AVERAGE_VALUE);
             o.set(0, 100.); o.set(o.size()-1, 100.);
             std::string fn("measurements/tssf.db");  // verify we can have path-parts
             db.save(fn,o);
@@ -533,7 +606,7 @@ TEST_CASE("dtss_store_basics") {
             core::utctime te = t + (2u*n - 3u)*dt/2u;
             auto r2 = db.read(fn, utcperiod{ tb, te });
             FAST_CHECK_EQ(o.point_interpretation(), r2.point_interpretation());
-            FAST_CHECK_EQ(r2.time_axis(), time_axis::fixed_dt(t + dt, dt, n - 2u));
+            FAST_CHECK_EQ(r2.time_axis(), time_axis::generic_dt(t + dt, dt, n - 2u));
             FAST_CHECK_EQ(r2.value(0), o.value(1));  // dropped first value of o
             FAST_CHECK_EQ(r2.value(r2.size() - 1), o.value(o.size() - 2));  // dropped last value of o
 
@@ -545,10 +618,10 @@ TEST_CASE("dtss_store_basics") {
             FAST_CHECK_EQ(fr.size(),0);
         }
 
-        SUBCASE("store_calendar_utc_dt") {
-            gts_t o(cta1, 10.0, time_series::ts_point_fx::POINT_AVERAGE_VALUE);
+        TEST_SECTION("store_calendar_utc_dt") {
+            gts_t o(gta_t(cta1), 10.0, time_series::ts_point_fx::POINT_AVERAGE_VALUE);
             o.set(0, 100.); o.set(o.size()-1, 100.);
-            std::string fn("tssf.db");
+            std::string fn("tssf1.db");
             db.save(fn, o);
 
             // read all
@@ -560,8 +633,9 @@ TEST_CASE("dtss_store_basics") {
             core::utctime tb = cta1.cal->add(t, dt_half, 3);
             core::utctime te = cta1.cal->add(t, dt_half, 2*n - 3);
             auto r2 = db.read(fn, utcperiod{ tb, te });
+
             FAST_CHECK_EQ(o.point_interpretation(), r2.point_interpretation());
-            FAST_CHECK_EQ(r2.time_axis(), time_axis::calendar_dt{ cta1.cal, cta1.cal->add(t, dt, 1), dt, n - 2u });
+            FAST_CHECK_EQ(r2.time_axis(), time_axis::generic_dt{ cta1.cal, cta1.cal->add(t, dt, 1), dt, n - 2u });
             FAST_CHECK_EQ(r2.value(0), o.value(1));  // dropped first value of o
             FAST_CHECK_EQ(r2.value(r2.size() - 1), o.value(o.size() - 2));  // dropped last value of o
 
@@ -571,24 +645,31 @@ TEST_CASE("dtss_store_basics") {
             FAST_CHECK_EQ(i.point_fx, o.point_interpretation());
             FAST_CHECK_LE( i.modified, utctime_now());
 
-            auto fr = db.find(string(".ss.\\.db")); // should match our ts.
+            auto fr = db.find(string(".ss.1\\.db")); // should match our ts.
             FAST_CHECK_EQ(fr.size(), 1 );
 
             db.remove(fn);
+            try {
+                auto rx=db.read(fn+".not.there", utcperiod{});
+                FAST_CHECK_UNARY(rx.size()==3);
+            } catch(const exception&) {
+                FAST_CHECK_UNARY(true);
+            }
+
         }
-        SUBCASE("store_calendar_osl_dt") {
-            gts_t o(cta2,10.0,time_series::ts_point_fx::POINT_AVERAGE_VALUE);
-            string fn("tssf.db");
+        TEST_SECTION("store_calendar_osl_dt") {
+            gts_t o(gta_t(cta2),10.0,time_series::ts_point_fx::POINT_AVERAGE_VALUE);
+            string fn("tssf2.db");
             db.save(fn,o);
             auto r=db.read(fn,utcperiod{});
             FAST_CHECK_EQ(o.point_interpretation(),r.point_interpretation());
             FAST_CHECK_EQ(o.time_axis(),r.time_axis());
             db.remove(fn);
         }
-        SUBCASE("store_point_dt") {
-            gts_t o(pta, 10.0, time_series::ts_point_fx::POINT_INSTANT_VALUE);
+        TEST_SECTION("store_point_dt") {
+            gts_t o(gta_t(pta), 10.0, time_series::ts_point_fx::POINT_INSTANT_VALUE);
             o.set(0, 100.); o.set(o.size()-1, 100.);
-            string fn("tssf.db");
+            string fn("tssf3.db");
             db.save(fn, o);
 
             // read all
@@ -602,7 +683,7 @@ TEST_CASE("dtss_store_basics") {
             auto r2 = db.read(fn, utcperiod{ tb, te });
             FAST_CHECK_EQ(o.point_interpretation(), r2.point_interpretation());
             time_axis::point_dt exp{ std::vector<core::utctime>( &o.ta.p.t[1], &o.ta.p.t[o.ta.p.t.size()-1] ), o.ta.p.t[o.ta.p.t.size()-1] };
-            FAST_CHECK_EQ(r2.time_axis(), exp);
+            FAST_CHECK_EQ(r2.time_axis(), gta_t(exp));
             FAST_CHECK_EQ(r2.value(0), o.value(1));  // dropped first value of o
             FAST_CHECK_EQ(r2.value(r2.size() - 1), o.value(o.size() - 2));  // dropped last value of o
 
@@ -614,12 +695,12 @@ TEST_CASE("dtss_store_basics") {
             db.remove(fn);
         }
 
-        SUBCASE("dtss_db_speed") {
-			int n_ts = 1200;
+        TEST_SECTION("dtss_db_speed") {
+			int n_ts = 120;
 			vector<gts_t> tsv; tsv.reserve(n_ts);
             double fv = 1.0;
             for (int i = 0; i < n_ts; ++i)
-                tsv.emplace_back(fta, fv += 1.0,shyft::time_series::ts_point_fx::POINT_AVERAGE_VALUE);
+                tsv.emplace_back(gta_t(fta), fv += 1.0,shyft::time_series::ts_point_fx::POINT_AVERAGE_VALUE);
             FAST_CHECK_EQ(n_ts,tsv.size());
 
             auto t0 = timing::now();
@@ -672,7 +753,8 @@ TEST_CASE("dtss_store") { /*
     shyft ts-db-store.
     */
     using namespace shyft::dtss;
-    using namespace shyft::api;
+    using namespace shyft::time_series::dd;
+	using time_series::point_ts;
     using time_series::ts_point_fx;
 
     auto utc=make_shared<calendar>();
@@ -726,10 +808,10 @@ TEST_CASE("dtss_store") { /*
         vector<int> pc{10,50,90};
         auto t2 = timing::now();
         //auto er= dtss.percentiles(ev,fta.total_period(),gta,pc);//uncached read
-        auto er= dtss.evaluate(ev,fta.total_period());//uncached read
+        auto er= dtss.evaluate(ev,fta.total_period(),true,true);//uncached read
         auto t3 = timing::now();
         //auto ec = dtss.percentiles(ev, fta.total_period(),gta,pc);
-        auto ec = dtss.evaluate(ev, fta.total_period());
+        auto ec = dtss.evaluate(ev, fta.total_period(),true,true);
         auto t4 = timing::now();// cached read.
         //-- establish benchmark
         vector<vector<double>> bmr;bmr.reserve(n_ts);
@@ -778,7 +860,7 @@ TEST_CASE("dtss_store_merge_write") {
     namespace dtss = shyft::dtss;
     namespace ta = shyft::time_axis;
     namespace ts = shyft::time_series;
-
+	using shyft::time_series::dd::gta_t;
     // setup db
     auto tmpdir = (fs::temp_directory_path()/"ts.db.test");
     dtss::ts_db db(tmpdir.string());
@@ -794,8 +876,8 @@ TEST_CASE("dtss_store_merge_write") {
             // -----
             ta::fixed_dt f_ta_h{ t0, dt_h, n };
             ta::calendar_dt c_ta_d{ utc_ptr, t0, dt_d, n };
-            ts::point_ts<ta::generic_dt> pts_h{ f_ta_h, 0. };
-            ts::point_ts<ta::generic_dt> pts_d{ c_ta_d, 0. };
+            ts::point_ts<ta::generic_dt> pts_h{ gta_t(f_ta_h), 0. };
+            ts::point_ts<ta::generic_dt> pts_d{ gta_t(c_ta_d), 0. };
             // -----
             std::string fn("dtss_save_merge/ext_diff_ta.db");
 
@@ -823,8 +905,8 @@ TEST_CASE("dtss_store_merge_write") {
             // -----
             ta::fixed_dt f_ta_h{ t0, dt_h, n };
             ta::fixed_dt f_ta_d{ t0, dt_d, n };
-            ts::point_ts<ta::generic_dt> pts_h{ f_ta_h, 0., ts::POINT_INSTANT_VALUE };
-            ts::point_ts<ta::generic_dt> pts_d{ f_ta_d, 0., ts::POINT_AVERAGE_VALUE };
+            ts::point_ts<ta::generic_dt> pts_h{ gta_t(f_ta_h), 0., ts::POINT_INSTANT_VALUE };
+            ts::point_ts<ta::generic_dt> pts_d{ gta_t(f_ta_d), 0., ts::POINT_AVERAGE_VALUE };
             // -----
             std::string fn("dtss_save_merge/ext_diff_fx.db");
 
@@ -851,8 +933,8 @@ TEST_CASE("dtss_store_merge_write") {
             // -----
             ta::fixed_dt f_ta_h{ t0, dt_h, n };
             ta::fixed_dt f_ta_d{ t0, dt_d, n };
-            ts::point_ts<ta::generic_dt> pts_h{ f_ta_h, 0. };
-            ts::point_ts<ta::generic_dt> pts_d{ f_ta_d, 0. };
+            ts::point_ts<ta::generic_dt> pts_h{ gta_t(f_ta_h), 0. };
+            ts::point_ts<ta::generic_dt> pts_d{ gta_t(f_ta_d), 0. };
             // -----
             std::string fn("dtss_save_merge/ext_fixed_diff_dt.db");  // verify we can have path-parts
 
@@ -880,8 +962,8 @@ TEST_CASE("dtss_store_merge_write") {
             // -----
             ta::fixed_dt f_ta_h{ t0_1, dt_h, n };
             ta::fixed_dt f_ta_d{ t0_2, dt_h, n };
-            ts::point_ts<ta::generic_dt> pts_h{ f_ta_h, 0. };
-            ts::point_ts<ta::generic_dt> pts_d{ f_ta_d, 0. };
+            ts::point_ts<ta::generic_dt> pts_h{ gta_t(f_ta_h), 0. };
+            ts::point_ts<ta::generic_dt> pts_d{ gta_t(f_ta_d), 0. };
             // -----
             std::string fn("dtss_save_merge/ext_fixed_unaligned.db");  // verify we can have path-parts
 
@@ -909,8 +991,8 @@ TEST_CASE("dtss_store_merge_write") {
             // -----
             ta::calendar_dt f_ta_h{ utc_ptr, t0, dt_h, n };
             ta::calendar_dt f_ta_d{ utc_ptr, t0, dt_d, n };
-            ts::point_ts<ta::generic_dt> pts_h{ f_ta_h, 0. };
-            ts::point_ts<ta::generic_dt> pts_d{ f_ta_d, 0. };
+            ts::point_ts<ta::generic_dt> pts_h{ gta_t(f_ta_h), 0. };
+            ts::point_ts<ta::generic_dt> pts_d{ gta_t(f_ta_d), 0. };
             // -----
             std::string fn("dtss_save_merge/ext_cal_diff_dt.db");  // verify we can have path-parts
 
@@ -938,8 +1020,8 @@ TEST_CASE("dtss_store_merge_write") {
             // -----
             ta::calendar_dt f_ta_h{ utc_ptr, t0_1, dt_h, n };
             ta::calendar_dt f_ta_d{ utc_ptr, t0_2, dt_h, n };
-            ts::point_ts<ta::generic_dt> pts_h{ f_ta_h, 0. };
-            ts::point_ts<ta::generic_dt> pts_d{ f_ta_d, 0. };
+            ts::point_ts<ta::generic_dt> pts_h{ gta_t(f_ta_h), 0. };
+            ts::point_ts<ta::generic_dt> pts_d{ gta_t(f_ta_d), 0. };
             // -----
             std::string fn("dtss_save_merge/ext_cal_unaligned.db");  // verify we can have path-parts
 
@@ -968,8 +1050,8 @@ TEST_CASE("dtss_store_merge_write") {
             // -----
             ta::calendar_dt f_ta_h{ utc_ptr, t0_1, dt_h, n };
             ta::calendar_dt f_ta_d{ osl_ptr, t0_2, dt_h, n };
-            ts::point_ts<ta::generic_dt> pts_h{ f_ta_h, 0. };
-            ts::point_ts<ta::generic_dt> pts_d{ f_ta_d, 0. };
+            ts::point_ts<ta::generic_dt> pts_h{ gta_t(f_ta_h), 0. };
+            ts::point_ts<ta::generic_dt> pts_d{ gta_t(f_ta_d), 0. };
             // -----
             std::string fn("dtss_save_merge/ext_cal_diff_cal.db");  // verify we can have path-parts
 
@@ -1000,8 +1082,8 @@ TEST_CASE("dtss_store_merge_write") {
                 const core::utctime t0 = utc_ptr->time(2016, 1, 1);
                 // -----
                 ta::fixed_dt f_ta{ t0, dt, n };
-                ts::point_ts<ta::generic_dt> pts_old{ f_ta, 1. };
-                ts::point_ts<ta::generic_dt> pts_new{ f_ta, 10. };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(f_ta), 1. };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(f_ta), 10. };
                 // -----
                 std::string fn("dtss_save_merge/fixed_exact.db");
 
@@ -1039,8 +1121,8 @@ TEST_CASE("dtss_store_merge_write") {
                 // -----
                 ta::fixed_dt f_ta_old{ t0_old, dt, n };
                 ta::fixed_dt f_ta_new{ t0_new, dt, n - 2*drop };
-                ts::point_ts<ta::generic_dt> pts_old{ f_ta_old, 1. };
-                ts::point_ts<ta::generic_dt> pts_new{ f_ta_new, 10. };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(f_ta_old), 1. };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(f_ta_new), 10. };
                 // -----
                 std::string fn("dtss_save_merge/fixed_new_in_old.db");
 
@@ -1082,8 +1164,8 @@ TEST_CASE("dtss_store_merge_write") {
                 // -----
                 ta::fixed_dt f_ta_old{ t0_old, dt, n };
                 ta::fixed_dt f_ta_new{ t0_new, dt, n + extra };
-                ts::point_ts<ta::generic_dt> pts_old{ f_ta_old, 1. };
-                ts::point_ts<ta::generic_dt> pts_new{ f_ta_new, 10. };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(f_ta_old), 1. };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(f_ta_new), 10. };
                 // -----
                 std::string fn("dtss_save_merge/fixed_old_in_new.db");
 
@@ -1119,8 +1201,8 @@ TEST_CASE("dtss_store_merge_write") {
                 // -----
                 ta::fixed_dt f_ta_old{ t0_old, dt, n };
                 ta::fixed_dt f_ta_new{ t0_new, dt, n };
-                ts::point_ts<ta::generic_dt> pts_old{ f_ta_old, 1. };
-                ts::point_ts<ta::generic_dt> pts_new{ f_ta_new, 10. };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(f_ta_old), 1. };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(f_ta_new), 10. };
                 // -----
                 std::string fn("dtss_save_merge/fixed_new_over_start.db");
 
@@ -1160,8 +1242,8 @@ TEST_CASE("dtss_store_merge_write") {
                 // -----
                 ta::fixed_dt f_ta_old{ t0_old, dt, n };
                 ta::fixed_dt f_ta_new{ t0_new, dt, n };
-                ts::point_ts<ta::generic_dt> pts_old{ f_ta_old, 1. };
-                ts::point_ts<ta::generic_dt> pts_new{ f_ta_new, 10. };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(f_ta_old), 1. };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(f_ta_new), 10. };
                 // -----
                 std::string fn("dtss_save_merge/fixed_new_over_end.db");
 
@@ -1199,8 +1281,8 @@ TEST_CASE("dtss_store_merge_write") {
                 // -----
                 ta::fixed_dt f_ta_old{ t0_old, dt, n };
                 ta::fixed_dt f_ta_new{ t0_new, dt, n };
-                ts::point_ts<ta::generic_dt> pts_old{ f_ta_old, 1. };
-                ts::point_ts<ta::generic_dt> pts_new{ f_ta_new, 10. };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(f_ta_old), 1. };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(f_ta_new), 10. };
                 // -----
                 std::string fn("dtss_save_merge/fixed_consec.db");
 
@@ -1238,8 +1320,8 @@ TEST_CASE("dtss_store_merge_write") {
                 // -----
                 ta::fixed_dt f_ta_old{ t0_old, dt, n };
                 ta::fixed_dt f_ta_new{ t0_new, dt, n };
-                ts::point_ts<ta::generic_dt> pts_old{ f_ta_old, 1. };
-                ts::point_ts<ta::generic_dt> pts_new{ f_ta_new, 10. };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(f_ta_old), 1. };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(f_ta_new), 10. };
                 // -----
                 std::string fn("dtss_save_merge/fixed_gap_after.db");
 
@@ -1280,8 +1362,8 @@ TEST_CASE("dtss_store_merge_write") {
                 // -----
                 ta::fixed_dt f_ta_old{ t0_old, dt, n };
                 ta::fixed_dt f_ta_new{ t0_new, dt, n };
-                ts::point_ts<ta::generic_dt> pts_old{ f_ta_old, 1. };
-                ts::point_ts<ta::generic_dt> pts_new{ f_ta_new, 10. };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(f_ta_old), 1. };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(f_ta_new), 10. };
                 // -----
                 std::string fn("dtss_save_merge/fixed_gap_before.db");
 
@@ -1322,8 +1404,8 @@ TEST_CASE("dtss_store_merge_write") {
                 const core::utctime t0 = utc_ptr->time(2016, 1, 1);
                 // -----
                 ta::calendar_dt c_ta{ utc_ptr, t0, dt, n };
-                ts::point_ts<ta::generic_dt> pts_old{ c_ta, 1. };
-                ts::point_ts<ta::generic_dt> pts_new{ c_ta, 10. };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(c_ta), 1. };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(c_ta), 10. };
                 // -----
                 std::string fn("dtss_save_merge/calendar_exact.db");
 
@@ -1361,8 +1443,8 @@ TEST_CASE("dtss_store_merge_write") {
                 // -----
                 ta::calendar_dt c_ta_old{ utc_ptr, t0_old, dt, n };
                 ta::calendar_dt c_ta_new{ utc_ptr, t0_new, dt, n - 2*drop };
-                ts::point_ts<ta::generic_dt> pts_old{ c_ta_old, 1. };
-                ts::point_ts<ta::generic_dt> pts_new{ c_ta_new, 10. };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(c_ta_old), 1. };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(c_ta_new), 10. };
                 // -----
                 std::string fn("dtss_save_merge/calendar_new_in_old.db");
 
@@ -1404,8 +1486,8 @@ TEST_CASE("dtss_store_merge_write") {
                 // -----
                 ta::calendar_dt c_ta_old{ utc_ptr, t0_old, dt, n };
                 ta::calendar_dt c_ta_new{ utc_ptr, t0_new, dt, n + extra };
-                ts::point_ts<ta::generic_dt> pts_old{ c_ta_old, 1. };
-                ts::point_ts<ta::generic_dt> pts_new{ c_ta_new, 10. };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(c_ta_old), 1. };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(c_ta_new), 10. };
                 // -----
                 std::string fn("dtss_save_merge/calendar_old_in_new.db");
 
@@ -1441,8 +1523,8 @@ TEST_CASE("dtss_store_merge_write") {
                 // -----
                 ta::calendar_dt c_ta_old{ utc_ptr, t0_old, dt, n };
                 ta::calendar_dt c_ta_new{ utc_ptr, t0_new, dt, n };
-                ts::point_ts<ta::generic_dt> pts_old{ c_ta_old, 1. };
-                ts::point_ts<ta::generic_dt> pts_new{ c_ta_new, 10. };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(c_ta_old), 1. };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(c_ta_new), 10. };
                 // -----
                 std::string fn("dtss_save_merge/calendar_new_over_start.db");
 
@@ -1482,8 +1564,8 @@ TEST_CASE("dtss_store_merge_write") {
                 // -----
                 ta::calendar_dt c_ta_old{ utc_ptr, t0_old, dt, n };
                 ta::calendar_dt c_ta_new{ utc_ptr, t0_new, dt, n };
-                ts::point_ts<ta::generic_dt> pts_old{ c_ta_old, 1. };
-                ts::point_ts<ta::generic_dt> pts_new{ c_ta_new, 10. };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(c_ta_old), 1. };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(c_ta_new), 10. };
                 // -----
                 std::string fn("dtss_save_merge/calendar_new_over_end.db");
 
@@ -1521,8 +1603,8 @@ TEST_CASE("dtss_store_merge_write") {
                 // -----
                 ta::calendar_dt c_ta_old{ utc_ptr, t0_old, dt, n };
                 ta::calendar_dt c_ta_new{ utc_ptr, t0_new, dt, n };
-                ts::point_ts<ta::generic_dt> pts_old{ c_ta_old, 1. };
-                ts::point_ts<ta::generic_dt> pts_new{ c_ta_new, 10. };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(c_ta_old), 1. };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(c_ta_new), 10. };
                 // -----
                 std::string fn("dtss_save_merge/calendar_consec.db");
 
@@ -1560,8 +1642,8 @@ TEST_CASE("dtss_store_merge_write") {
                 // -----
                 ta::calendar_dt c_ta_old{ utc_ptr, t0_old, dt, n };
                 ta::calendar_dt c_ta_new{ utc_ptr, t0_new, dt, n };
-                ts::point_ts<ta::generic_dt> pts_old{ c_ta_old, 1. };
-                ts::point_ts<ta::generic_dt> pts_new{ c_ta_new, 10. };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(c_ta_old), 1. };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(c_ta_new), 10. };
                 // -----
                 std::string fn("dtss_save_merge/calendar_gap_after.db");
 
@@ -1602,8 +1684,8 @@ TEST_CASE("dtss_store_merge_write") {
                 // -----
                 ta::calendar_dt c_ta_old{ utc_ptr, t0_old, dt, n };
                 ta::calendar_dt c_ta_new{ utc_ptr, t0_new, dt, n };
-                ts::point_ts<ta::generic_dt> pts_old{ c_ta_old, 1. };
-                ts::point_ts<ta::generic_dt> pts_new{ c_ta_new, 10. };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(c_ta_old), 1. };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(c_ta_new), 10. };
                 // -----
                 std::string fn("dtss_save_merge/calendar_gap_before.db");
 
@@ -1657,8 +1739,8 @@ TEST_CASE("dtss_store_merge_write") {
             SUBCASE("exact") {
                 // data
                 ta::point_dt p_ta{ old_timepoints };
-                ts::point_ts<ta::generic_dt> pts_old{ p_ta, old_values };
-                ts::point_ts<ta::generic_dt> pts_new{ p_ta, new_values };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(p_ta), old_values };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(p_ta), new_values };
                 // -----
                 std::string fn("dtss_save_merge/point_exact.db");
 
@@ -1698,8 +1780,8 @@ TEST_CASE("dtss_store_merge_write") {
                 // -----
                 ta::point_dt p_ta_old{ old_timepoints };
                 ta::point_dt p_ta_new{ new_timepoints };
-                ts::point_ts<ta::generic_dt> pts_old{ p_ta_old, old_values };
-                ts::point_ts<ta::generic_dt> pts_new{ p_ta_new, new_values };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(p_ta_old), old_values };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(p_ta_new), new_values };
                 // -----
                 std::string fn("dtss_save_merge/point_new_in_old.db");
 
@@ -1744,8 +1826,8 @@ TEST_CASE("dtss_store_merge_write") {
                 // -----
                 ta::point_dt p_ta_old{ old_timepoints };
                 ta::point_dt p_ta_new{ new_timepoints };
-                ts::point_ts<ta::generic_dt> pts_old{ p_ta_old, old_values };
-                ts::point_ts<ta::generic_dt> pts_new{ p_ta_new, new_values };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(p_ta_old), old_values };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(p_ta_new), new_values };
                 // -----
                 std::string fn("dtss_save_merge/point_old_in_new.db");
 
@@ -1781,8 +1863,8 @@ TEST_CASE("dtss_store_merge_write") {
                 // -----
                 ta::point_dt p_ta_old{ old_timepoints };
                 ta::point_dt p_ta_new{ new_timepoints };
-                ts::point_ts<ta::generic_dt> pts_old{ p_ta_old, old_values };
-                ts::point_ts<ta::generic_dt> pts_new{ p_ta_new, new_values };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(p_ta_old), old_values };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(p_ta_new), new_values };
                 // -----
                 std::string fn("dtss_save_merge/point_new_over_start.db");
 
@@ -1820,8 +1902,8 @@ TEST_CASE("dtss_store_merge_write") {
                 // -----
                 ta::point_dt p_ta_old{ old_timepoints };
                 ta::point_dt p_ta_new{ new_timepoints };
-                ts::point_ts<ta::generic_dt> pts_old{ p_ta_old, old_values };
-                ts::point_ts<ta::generic_dt> pts_new{ p_ta_new, new_values };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(p_ta_old), old_values };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(p_ta_new), new_values };
                 // -----
                 std::string fn("dtss_save_merge/point_new_over_end.db");
 
@@ -1859,8 +1941,8 @@ TEST_CASE("dtss_store_merge_write") {
                 // -----
                 ta::point_dt p_ta_old{ old_timepoints };
                 ta::point_dt p_ta_new{ new_timepoints };
-                ts::point_ts<ta::generic_dt> pts_old{ p_ta_old, old_values };
-                ts::point_ts<ta::generic_dt> pts_new{ p_ta_new, new_values };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(p_ta_old), old_values };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(p_ta_new), new_values };
                 // -----
                 std::string fn("dtss_save_merge/point_consec.db");
 
@@ -1898,8 +1980,8 @@ TEST_CASE("dtss_store_merge_write") {
                 // -----
                 ta::point_dt p_ta_old{ old_timepoints };
                 ta::point_dt p_ta_new{ new_timepoints };
-                ts::point_ts<ta::generic_dt> pts_old{ p_ta_old, old_values };
-                ts::point_ts<ta::generic_dt> pts_new{ p_ta_new, new_values };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(p_ta_old), old_values };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(p_ta_new), new_values };
                 // -----
                 std::string fn("dtss_save_merge/point_gap_after.db");
 
@@ -1939,8 +2021,8 @@ TEST_CASE("dtss_store_merge_write") {
                 // -----
                 ta::point_dt p_ta_old{ old_timepoints };
                 ta::point_dt p_ta_new{ new_timepoints };
-                ts::point_ts<ta::generic_dt> pts_old{ p_ta_old, old_values };
-                ts::point_ts<ta::generic_dt> pts_new{ p_ta_new, new_values };
+                ts::point_ts<ta::generic_dt> pts_old{ gta_t(p_ta_old), old_values };
+                ts::point_ts<ta::generic_dt> pts_new{ gta_t(p_ta_new), new_values };
                 // -----
                 std::string fn("dtss_save_merge/point_gap_before.db");
 
@@ -1983,8 +2065,8 @@ TEST_CASE("dtss_store_merge_write") {
             // -----
             ta::fixed_dt f_ta_old{ t0_old, dt, n };
             ta::fixed_dt f_ta_new{ t0_new, dt, n - 2*drop };
-            ts::point_ts<ta::generic_dt> pts_old{ f_ta_old, 1. };
-            ts::point_ts<ta::generic_dt> pts_new{ f_ta_new, 10. };
+            ts::point_ts<ta::generic_dt> pts_old{ gta_t(f_ta_old), 1. };
+            ts::point_ts<ta::generic_dt> pts_new{ gta_t(f_ta_new), 10. };
             // -----
             std::string fn("dtss_save_merge/force_overwrite.db");
 
@@ -2016,7 +2098,8 @@ TEST_CASE("dtss_store_merge_write") {
 
 TEST_CASE("dtss_baseline") {
     using namespace shyft::dtss;
-    using namespace shyft::api;
+    using namespace shyft::time_series::dd;
+	using time_series::point_ts;
     using time_series::ts_point_fx;
     using std::cout;
     auto utc=make_shared<calendar>();
@@ -2088,7 +2171,8 @@ TEST_CASE("dtss_ltm") {
     // this is basically just for performance study of
     // for api type of ts-expressions,
     using namespace shyft::dtss;
-    using namespace shyft::api;
+    using namespace shyft::time_series::dd;
+	using shyft::time_series::point_ts;
     using time_series::ts_point_fx;
     using std::cout;
     auto utc=make_shared<calendar>();
