@@ -54,9 +54,7 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
         # Field names and mappings netcdf_name: shyft_name
         self._arome_shyft_map = {'dew_point_temperature_2m': 'dew_point_temperature_2m',
                                  'surface_air_pressure': 'surface_air_pressure',
-                                 # "relative_humidity_2m": "relative_humidity",
                                  "air_temperature_2m": "temperature",
-                                 # "precipitation_amount": "precipitation",
                                  "precipitation_amount_acc": "precipitation",
                                  "x_wind_10m": "x_wind",
                                  "y_wind_10m": "y_wind",
@@ -73,11 +71,11 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
         self._shift_fields = ("precipitation_amount_acc",
                               "integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time")
 
-        self.source_type_map = {"relative_humidity": api.RelHumSource,
-                                "temperature": api.TemperatureSource,
-                                "precipitation": api.PrecipitationSource,
-                                "radiation": api.RadiationSource,
-                                "wind_speed": api.WindSpeedSource}
+        # self.source_type_map = {"relative_humidity": api.RelHumSource,
+        #                         "temperature": api.TemperatureSource,
+        #                         "precipitation": api.PrecipitationSource,
+        #                         "radiation": api.RadiationSource,
+        #                         "wind_speed": api.WindSpeedSource}
 
         self.create_geo_ts_type_map = {"relative_humidity": api.create_rel_hum_source_vector_from_np_array,
                                       "temperature": api.create_temperature_source_vector_from_np_array,
@@ -330,6 +328,7 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
             input_source_types.append("y_wind")
         no_temp = False
         if "temperature" not in input_source_types: no_temp = True
+
         # TODO: If available in raw file, use that - see AromeConcatRepository
         if "relative_humidity" in input_source_types:
             if not isinstance(input_source_types, list):
@@ -359,6 +358,8 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
 
         time = convert_netcdf_time(time.units, time)
         lead_times_in_sec = lead_time[:] * 3600.
+
+        # The following are only relevant for concat mode. Need to generalise to flexible time steps
         self.fc_time_res = (lead_time[1] - lead_time[0]) * 3600.  # in seconds
         self.fc_interval = int((time[1] - time[0]) / self.fc_time_res)  # in-terms of self.fc_time_res
 
