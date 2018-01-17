@@ -11,6 +11,7 @@ from shyft import api
 from shyft import shyftdata_dir
 from .. import interfaces
 from .time_conversion import convert_netcdf_time
+import warnings
 
 UTC = api.Calendar()
 
@@ -387,18 +388,16 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
                 data_slice = len(data.dimensions) * [slice(None)]
                 if 'ensemble_member' in dims and ensemble_member is not None:
                     data_slice[dims.index("ensemble_member")] = ensemble_member
-                # if 'ensemble_member' in dims:
-                #     if ensemble_member is None:
-                #         nb_ensemble_members = dataset.dimensions['ensemble_member'].size
-                #         data_slice[dims.index("ensemble_member")] = slice(0, nb_ensemble_members, None)
-                #     else:
-                #         data_slice[dims.index("ensemble_member")] = ensemble_member
 
                 data_slice[dims.index(dim_nb_series)] = xy_slice
                 data_slice[dims.index("lead_time")] = data_lead_time_slice
                 data_slice[dims.index("time")] = time_slice  # data_time_slice
                 new_slice = [m_xy[xy_slice] if dim == dim_nb_series else slice(None) for dim in dims]
-                pure_arr = data[data_slice][new_slice]
+
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", message="invalid value encountered in greater")
+                    warnings.filterwarnings("ignore", message="invalid value encountered in less_equal")
+                    pure_arr = data[data_slice][new_slice]
 
                 if 'ensemble_member' not in dims:
                     # add axis for 'ensemble_member'
@@ -410,17 +409,25 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
                 if isinstance(pure_arr, np.ma.core.MaskedArray):
                     pure_arr = pure_arr.filled(np.nan)
                 if nb_extra_intervals > 0:
-                    # TODO: Check if this works for ensembles
+                    # TODO: Extend this for ensembles
                     data_slice[dims.index("time")] = [time_slice.stop - 1]
                     data_slice[dims.index("lead_time")] = slice(data_lead_time_slice.stop,
                                                                 data_lead_time_slice.stop + (
                                                                         nb_extra_intervals + 1) * self.fc_len_to_concat)
-                    data_extra = data[data_slice][new_slice].reshape(nb_extra_intervals + 1, self.fc_len_to_concat, -1)
+                    # data_extra = data[data_slice][new_slice].reshape(nb_extra_intervals + 1, self.fc_len_to_concat, -1)
+                    with warnings.catch_warnings():
+                        warnings.filterwarnings("ignore", message="invalid value encountered in greater")
+                        warnings.filterwarnings("ignore", message="invalid value encountered in less_equal")
+                        nb_ens, nb_pts = data[data_slice][new_slice].shape[-2:]
+                        data_extra = data[data_slice][new_slice].reshape(nb_extra_intervals + 1, self.fc_len_to_concat,
+                                                                     nb_ens, nb_pts)
                     if k in self._shift_fields:
-                        data_extra_ = np.zeros((nb_extra_intervals, self.fc_len_to_concat + 1, len(x)),
+                        # data_extra_ = np.zeros((nb_extra_intervals, self.fc_len_to_concat + 1, len(x)),
+                        #                       dtype=data_extra.dtype)
+                        data_extra_ = np.zeros((nb_extra_intervals, self.fc_len_to_concat + 1, nb_ens, nb_pts),
                                                dtype=data_extra.dtype)
-                        data_extra_[:, 0:-1, :] = data_extra[:-1, :, :]
-                        data_extra_[:, -1, :] = data_extra[1:, -1, :]
+                        data_extra_[:, 0:-1, :, :] = data_extra[:-1, :, :, :]
+                        data_extra_[:, -1, :, :] = data_extra[1:, -1, :, :]
                         data_extra = data_extra_
                     else:
                         data_extra = data_extra[:-1]
@@ -450,6 +457,7 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
             x_wind, _ = raw_data.pop("x_wind")
             y_wind, _ = raw_data.pop("y_wind")
             raw_data["wind_speed"] = np.sqrt(np.square(x_wind) + np.square(y_wind)), "wind_speed"
+
         # TODO: skip this if relative humidity available (Arome case)
         if set(("surface_air_pressure", "dew_point_temperature_2m")).issubset(raw_data):
             sfc_p, _ = raw_data.pop("surface_air_pressure")
@@ -459,6 +467,7 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
             else:
                 sfc_t, _ = raw_data["temperature"]
             raw_data["relative_humidity"] = self.calc_RH(sfc_t, dpt_t, sfc_p), "relative_humidity"
+
         data_lead_time_slice = slice(lead_time_slice.start, lead_time_slice.stop + 1)
         extracted_data = self._transform_raw(raw_data, time_ext, lead_times_in_sec[data_lead_time_slice], concat)
         # self.extracted_data = extracted_data
@@ -554,27 +563,17 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
         timeseries: dict
             Time series arrays keyed by type
         """
-
+        nb_ensemble_members = list(data.values())[0][0].shape[2]
         if concat:
-            # TODO: edit this version
-            for key, (data, ta) in data.items():
-                nb_timesteps, nb_pts = data.shape
-
-                def construct(d):
-                    if ta.size() != d.size:
-                        raise ConcatDataRepositoryError("Time axis size {} not equal to the number of "
-                                                          "data points ({}) for {}"
-                                                          "".format(ta.size(), d.size, key))
-                    return tsf(ta.size(), ta.start, ta.delta_t,
-                               api.DoubleVector.FromNdArray(d.flatten()), self.series_type[key])
-
-                time_series[key] = np.array([construct(data[:, j]) for j in range(nb_pts)])
-        else:
-            nb_ensemble_members = 51 # TODO: nb_ensemble_members = self.nb_ensemble_members
-            nb_fcst = 2
-            geo_ts = [[{key: self.create_geo_ts_type_map[key](ta[i],geo_pts,arr[i,:,j,:].transpose(),self.series_type[key])
+            geo_ts = [{key: self.create_geo_ts_type_map[key](ta, geo_pts, arr[:, j, :].transpose(), self.series_type[key])
                        for key, (arr, ta) in data.items()}
-                      for j in range(nb_ensemble_members)] for i in range(nb_fcst)]
+                       for j in range(nb_ensemble_members)]
+        else:
+            nb_forecasts = list(data.values())[0][0].shape[0]
+            geo_ts = [[{key:
+                        self.create_geo_ts_type_map[key](ta[i], geo_pts, arr[i,:,j,:].transpose(), self.series_type[key])
+                       for key, (arr, ta) in data.items()}
+                       for j in range(nb_ensemble_members)] for i in range(nb_forecasts)]
         return geo_ts
 
 
