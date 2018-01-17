@@ -39,6 +39,7 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
         # TODO: check all versions of get_forecasts
         # TODO: set ut get_forecast_ensembles
         # TODO: fix get_timeseries so it works for flexible timesteps
+        # TODO: extend so that we can chose periodicity (i.e onle pick EC00 , etc)
         # TODO: documentation
         self.selection_criteria = selection_criteria
         # filename = filename.replace('${SHYFTDATA}', os.getenv('SHYFTDATA', '.'))
@@ -243,12 +244,14 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
         v = fc_selection_criteria_v
         nb_extra_intervals = 0
         if concat:  # make continuous timeseries
-            self.fc_len_to_concat = self.nb_fc_interval_to_concat * self.fc_interval
             utc_period = v  # TODO: verify that fc_selection_criteria_v is of type api.UtcPeriod
             time_after_drop = time + lead_times_in_sec[self.nb_fc_to_drop]
+            # self.fc_len_to_concat = self.nb_fc_interval_to_concat * self.fc_interval
+            self.fc_len_to_concat = np.argmax(time[0] + lead_times_in_sec >= time_after_drop[1])
             # idx_min = np.searchsorted(time, utc_period.start, side='left')
             idx_min = np.argmin(time_after_drop <= utc_period.start) - 1  # raise error if result is -1
             # idx_max = np.searchsorted(time, utc_period.end, side='right')
+            # why not idx_max - 1 ???
             idx_max = np.argmax(time_after_drop >= utc_period.end)  # raise error if result is 0
             if idx_min < 0:
                 first_lead_time_of_last_fc = int(time_after_drop[-1])
@@ -260,6 +263,7 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
                         "requested ({})".format(UTC.to_string(int(time_after_drop[0])),
                                                 UTC.to_string(utc_period.start)))
             if idx_max == 0:
+                # Is it right to test for last lead_time?
                 last_lead_time_of_last_fc = int(time[-1] + lead_times_in_sec[-1])
                 if last_lead_time_of_last_fc < utc_period.end:
                     raise ConcatDataRepositoryError(
@@ -270,15 +274,19 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
                     idx_max = len(time) - 1
 
             # issubset = True if idx_max < len(time) - 1 else False # For a concat repo 'issubset' is related to the lead_time axis and not the main time axis
+            # TODO: shouldn't this be issubset = True if self.nb_fc_to_drop + self.fc_len_to_concat < len(lead_time) else False
             issubset = True if self.nb_fc_to_drop + self.fc_len_to_concat < len(lead_time) - 1 else False
             time_slice = slice(idx_min, idx_max + 1)
             last_time = int(time[idx_max] + lead_times_in_sec[self.nb_fc_to_drop + self.fc_len_to_concat - 1])
             if utc_period.end > last_time:
                 nb_extra_intervals = int(
-                    0.5 + (utc_period.end - last_time) / (self.fc_len_to_concat * self.fc_time_res))
+                    0.5 + (utc_period.end - last_time) / (self.fc_interval))
+                # nb_extra_intervals = int(
+                #     0.5 + (utc_period.end - last_time) / (self.fc_len_to_concat * self.fc_time_res))
         else:
             # self.fc_len_to_concat = len(lead_time)  # Take all lead_times for now
             # self.nb_fc_to_drop = 0  # Take all lead_times for now
+            # self.fc_len_to_concat = len(lead_time) - self.nb_fc_to_drop
             self.fc_len_to_concat = len(lead_time) - self.nb_fc_to_drop
             if isinstance(v, api.UtcPeriod):
                 time_slice = ((time >= v.start) & (time <= v.end))
@@ -308,7 +316,6 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
                 time_slice = slice(idx - n + 1, idx + 1)
             issubset = False  # Since we take all the lead_times for now
 
-        # TODO: this assumes constant lead_time resolution
         lead_time_slice = slice(self.nb_fc_to_drop, self.nb_fc_to_drop + self.fc_len_to_concat)
 
         # For checking
@@ -331,6 +338,7 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
             input_source_types.remove("wind_speed")
             input_source_types.append("x_wind")
             input_source_types.append("y_wind")
+
         no_temp = False
         if "temperature" not in input_source_types: no_temp = True
 
@@ -365,8 +373,10 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
         lead_times_in_sec = lead_time[:] * 3600.
 
         # The following are only relevant for concat mode. Need to generalise to flexible time steps
-        self.fc_time_res = (lead_time[1] - lead_time[0]) * 3600.  # in seconds
-        self.fc_interval = int((time[1] - time[0]) / self.fc_time_res)  # in-terms of self.fc_time_res
+        # self.fc_time_res = (lead_time[1] - lead_time[0]) * 3600.  # in seconds
+        # self.fc_interval = int((time[1] - time[0]) / self.fc_time_res)  # in-terms of self.fc_time_res
+        self.fc_interval = time[1] - time[0]
+        # self.fc_leads_to_read
 
         time_slice, lead_time_slice, issubset, self.fc_len_to_concat, nb_extra_intervals = \
             self._make_time_slice(time, lead_time, lead_times_in_sec, fc_selection_criteria_v, concat)
@@ -374,7 +384,8 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
         time_ext = time[time_slice]
         # print('nb_extra_intervals:',nb_extra_intervals)
         if nb_extra_intervals > 0:
-            time_extra = time_ext[-1] + np.arange(1, nb_extra_intervals + 1) * self.fc_len_to_concat * self.fc_time_res
+            # time_extra = time_ext[-1] + np.arange(1, nb_extra_intervals + 1) * self.fc_len_to_concat * self.fc_time_res
+            time_extra = time_ext[-1] + np.arange(1, nb_extra_intervals + 1) * self.fc_interval
             time_ext = np.concatenate((time_ext, time_extra))
             # print('Extra time:', time_ext)
 
@@ -385,6 +396,7 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
                 if k in self._shift_fields and issubset:  # Add one to lead_time slice
                     data_lead_time_slice = slice(lead_time_slice.start, lead_time_slice.stop + 1)
                 else:
+                    # TODO: check what happens when daccumulating?
                     data_lead_time_slice = lead_time_slice
 
                 data = dataset.variables[k]
@@ -413,6 +425,7 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
                 if isinstance(pure_arr, np.ma.core.MaskedArray):
                     pure_arr = pure_arr.filled(np.nan)
                 if nb_extra_intervals > 0:
+                    # Fill in values using prolongation of last forecast
                     data_slice[dims.index("time")] = [time_slice.stop - 1]
                     data_slice[dims.index("lead_time")] = slice(data_lead_time_slice.stop,
                                                                 data_lead_time_slice.stop + (
@@ -477,6 +490,7 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
 
     def _transform_raw(self, data, time, lead_time, concat):
         # Todo; check time axis type (fixed ts_delta or not)
+        # TODO: check robustness off all converiosn for flexible lead_times
         """
         We need full time if deaccumulating
         """
@@ -484,7 +498,8 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
         def concat_t(t):
             t_stretch = np.ravel(np.repeat(t, self.fc_len_to_concat).reshape(len(t), self.fc_len_to_concat) + lead_time[
                                                                                                               0:self.fc_len_to_concat])
-            return api.TimeAxis(int(t_stretch[0]), int(t_stretch[1]) - int(t_stretch[0]), len(t_stretch))
+            # return api.TimeAxis(int(t_stretch[0]), int(t_stretch[1]) - int(t_stretch[0]), len(t_stretch))
+            return api.TimeAxis(api.UtcTimeVector.from_numpy(t_stretch.astype(int)), int(t_stretch[-1] + self.fc_interval))
 
         def forecast_t(t, daccumulated_var=False):
             nb_ext_lead_times = self.fc_len_to_concat - 1 if daccumulated_var else self.fc_len_to_concat
