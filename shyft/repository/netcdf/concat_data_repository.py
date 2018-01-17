@@ -36,6 +36,10 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
     __Tice = 205.16  # K
 
     def __init__(self, epsg, filename, nb_pads=0, nb_fc_to_drop=0, selection_criteria=None, padding=5000.):
+        # TODO: check all versions of get_forecasts
+        # TODO: set ut get_forecast_ensembles
+        # TODO: fix get_timeseries so it works for flexible timesteps
+        # TODO: documentation
         self.selection_criteria = selection_criteria
         # filename = filename.replace('${SHYFTDATA}', os.getenv('SHYFTDATA', '.'))
         filename = path.expandvars(filename)
@@ -409,22 +413,17 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
                 if isinstance(pure_arr, np.ma.core.MaskedArray):
                     pure_arr = pure_arr.filled(np.nan)
                 if nb_extra_intervals > 0:
-                    # TODO: Extend this for ensembles
                     data_slice[dims.index("time")] = [time_slice.stop - 1]
                     data_slice[dims.index("lead_time")] = slice(data_lead_time_slice.stop,
                                                                 data_lead_time_slice.stop + (
                                                                         nb_extra_intervals + 1) * self.fc_len_to_concat)
-                    # data_extra = data[data_slice][new_slice].reshape(nb_extra_intervals + 1, self.fc_len_to_concat, -1)
                     with warnings.catch_warnings():
                         warnings.filterwarnings("ignore", message="invalid value encountered in greater")
                         warnings.filterwarnings("ignore", message="invalid value encountered in less_equal")
-                        nb_ens, nb_pts = data[data_slice][new_slice].shape[-2:]
                         data_extra = data[data_slice][new_slice].reshape(nb_extra_intervals + 1, self.fc_len_to_concat,
-                                                                     nb_ens, nb_pts)
+                                                                     *pure_arr.shape[-2:])
                     if k in self._shift_fields:
-                        # data_extra_ = np.zeros((nb_extra_intervals, self.fc_len_to_concat + 1, len(x)),
-                        #                       dtype=data_extra.dtype)
-                        data_extra_ = np.zeros((nb_extra_intervals, self.fc_len_to_concat + 1, nb_ens, nb_pts),
+                        data_extra_ = np.zeros((nb_extra_intervals, self.fc_len_to_concat + 1, *pure_arr.shape[-2:]),
                                                dtype=data_extra.dtype)
                         data_extra_[:, 0:-1, :, :] = data_extra[:-1, :, :, :]
                         data_extra_[:, -1, :, :] = data_extra[1:, -1, :, :]
@@ -485,7 +484,7 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
         def concat_t(t):
             t_stretch = np.ravel(np.repeat(t, self.fc_len_to_concat).reshape(len(t), self.fc_len_to_concat) + lead_time[
                                                                                                               0:self.fc_len_to_concat])
-            return api.TimeAxisFixedDeltaT(int(t_stretch[0]), int(t_stretch[1]) - int(t_stretch[0]), len(t_stretch))
+            return api.TimeAxis(int(t_stretch[0]), int(t_stretch[1]) - int(t_stretch[0]), len(t_stretch))
 
         def forecast_t(t, daccumulated_var=False):
             nb_ext_lead_times = self.fc_len_to_concat - 1 if daccumulated_var else self.fc_len_to_concat
@@ -563,7 +562,7 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
         timeseries: dict
             Time series arrays keyed by type
         """
-        nb_ensemble_members = list(data.values())[0][0].shape[2]
+        nb_ensemble_members = list(data.values())[0][0].shape[-2]
         if concat:
             geo_ts = [{key: self.create_geo_ts_type_map[key](ta, geo_pts, arr[:, j, :].transpose(), self.series_type[key])
                        for key, (arr, ta) in data.items()}
