@@ -174,8 +174,13 @@ void shyft::core::hbv_snow::state::serialize(Archive & ar, const unsigned int fi
 template <class Archive>
 void shyft::core::hbv_physical_snow::state::serialize(Archive & ar, const unsigned int file_version) {
     ar
-    & make_nvp("swe",swe)
-    & make_nvp("sca",sca)
+    & core_nvp("sp", sp)
+    & core_nvp("sw", sw)
+    & core_nvp("albedo", albedo)
+    & core_nvp("iso_pot_energy", iso_pot_energy)
+    & core_nvp("surface_heat", surface_heat)
+    & core_nvp("swe", swe)
+    & core_nvp("sca", sca)
     ;
 }
 template <class Archive>

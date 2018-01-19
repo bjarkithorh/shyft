@@ -8,6 +8,7 @@ namespace expose {
         using namespace shyft::core::hbv_physical_snow;
         using namespace boost::python;
         using namespace std;
+        namespace py=boost::python;
         class_<parameter>("HbvPhysicalSnowParameter")
         .def(init<optional<double,double,double,double,double,double,double,double,double,double,double,bool>>(args("tx","lw","cfr","wind_scale","wind_const","surface_magnitude","max_albedo","min_albedo","fast_albedo_decay_rate","slow_albedo_decay_rate","snowfall_reset_depth","calculate_iso_pot_energy"),"create parameter object with specifed values"))
         .def(init<const vector<double>&,const vector<double>&,optional<double,double,double,double,double,double,double,double,double,double,double,bool>>(
@@ -37,6 +38,12 @@ namespace expose {
          .def_readwrite("surface_heat",&state::surface_heat,"surface_heat (Snow surface cold content) [J/m2]")
          .def_readwrite("swe",&state::swe,"snow water equivalent[mm]")
          .def_readwrite("sca",&state::sca,"snow covered area [0..1]")
+         .def("distribute", &state::distribute,(py::arg("self"), py::arg("p")),
+             doc_intro("Distribute state according to parameter settings.")
+             doc_parameters()
+             doc_parameter("p", "HbvPhysicalSnowParameter", "descr")
+             doc_returns("", "None", "")
+         )
          ;
 
         class_<response>("HbvPhysicalSnowResponse")
@@ -55,8 +62,8 @@ namespace expose {
                 "include the end points 0 and 1 and must be given in ascending order.\n"
                 "\n",no_init
             )
-            .def(init<const parameter&,state&>(args("parameter","state"),"creates a calculator with given parameter and initial state, notice that state is updated in this call(hmm)"))
-            .def("step",&HbvPhysicalSnowCalculator::step,args("state","response","t","dt","param","temperature","rad", "prec_mm_h","wind_speed","rel_hum"),"steps the model forward from t to t+dt, updating state and response")
+            .def(init<const parameter&>(args("parameter"),"creates a calculator with given parameter and initial state, notice that state is updated in this call(hmm)"))
+            .def("step",&HbvPhysicalSnowCalculator::step,args("state","response","t","dt","temperature","rad", "prec_mm_h","wind_speed","rel_hum"),"steps the model forward from t to t+dt, updating state and response")
 
             ;
 

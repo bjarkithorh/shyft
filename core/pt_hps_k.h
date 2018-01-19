@@ -218,7 +218,7 @@ namespace shyft {
             // Initialize the method stack
             precipitation_correction::calculator p_corr(parameter.p_corr.scale_factor);
             priestley_taylor::calculator pt(parameter.pt.albedo, parameter.pt.alpha);
-            hbv_physical_snow::calculator<typename P::hps_parameter_t, typename S::hps_state_t, typename R::hps_response_t> hbv_physical_snow(parameter.hps, state.hps);
+            const hbv_physical_snow::calculator<typename P::hps_parameter_t, typename S::hps_state_t, typename R::hps_response_t> hbv_physical_snow(parameter.hps);
             kirchner::calculator<kirchner::trapezoidal_average, typename P::kirchner_parameter_t> kirchner(parameter.kirchner);
 
             R response;
@@ -239,7 +239,7 @@ namespace shyft {
                 double wind_speed = wind_speed_accessor.value(i);
                 state_collector.collect(i, state);///< \note collect the state at the beginning of each period (the end state is saved anyway)
 
-                hbv_physical_snow.step(state.hps, response.hps, period.start, period.timespan(), parameter.hps, temp, rad, prec, wind_speed, rel_hum); // outputs mm/h, interpreted as over the entire area
+                hbv_physical_snow.step(state.hps, response.hps, period.start, period.timespan(), temp, rad, prec, wind_speed, rel_hum); // outputs mm/h, interpreted as over the entire area
 
                 response.gm_melt_m3s = glacier_melt::step(parameter.gm.dtf,temp,geo_cell_data.area()*state.hps.sca,glacier_area_m2);// m3/s, that is, how much flow from the snow free glacier parts
 
