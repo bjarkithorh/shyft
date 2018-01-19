@@ -190,6 +190,9 @@
     <ClInclude Include="expression_serialization.h">
       <Filter>serialization</Filter>
     </ClInclude>
+    <ClInclude Include="time_series_point_merge.h">
+      <Filter>time_series</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="methods">
