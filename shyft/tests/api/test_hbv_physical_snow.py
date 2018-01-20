@@ -30,12 +30,12 @@ class HbvPhysicalSnow(unittest.TestCase):
 
 
     def test_hbv_physical_snow_parameter_sig2(self):
-        p = HbvPhysicalSnowParameter([1.3, 2.4, 1.9],
-                                     [1.2, 9.1, 1.2])
-        for (el, comp) in zip(p.s, [1.3, 2.4, 1.9]):
+        p = HbvPhysicalSnowParameter(snow_redist_factors=[2.0, 2.0, 2.0],
+                                     quantiles= [0.0, 0.5, 1.0])
+        for (el, comp) in zip(p.s, [1.0, 1.0, 1.0]):  # automatic normalization to 1.0
             self.assertAlmostEqual(el, comp)
 
-        for (el, comp) in zip(p.intervals, [1.2, 9.1, 1.2]):
+        for (el, comp) in zip(p.intervals, [0.0, 0.5, 1.0]):  # should equal quantiles
             self.assertAlmostEqual(el, comp)
 
 
@@ -59,7 +59,8 @@ class HbvPhysicalSnow(unittest.TestCase):
         s = HbvPhysicalSnowState()
         p = HbvPhysicalSnowParameter()
         r = HbvPhysicalSnowResponse()
-        calc = HbvPhysicalSnowCalculator(p, s)
+        s.distribute(p)
+        calc = HbvPhysicalSnowCalculator(p)
         t = utc.time(2016,10,1)
         dt = deltahours(1)
         temp = 0.4
@@ -68,4 +69,4 @@ class HbvPhysicalSnow(unittest.TestCase):
         wind_speed=1.3
         rel_hum=0.4
         # Just check that we don't get an error when stepping
-        calc.step(s, r, t, dt, p, temp, rad, prec_mm_h, wind_speed, rel_hum)
+        calc.step(s, r, t, dt, temp, rad, prec_mm_h, wind_speed, rel_hum)
