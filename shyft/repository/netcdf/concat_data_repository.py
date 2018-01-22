@@ -147,17 +147,24 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
                                                                   geo_location_criteria,
                                                                   nb_lead_intervals=self.fc_len_to_concat, concat=True)
             # check if extra_intervals are required
-            ta_end = list(extracted_data.values())[0][1].total_period().end # time axis of first item
-            if ta_end < utc_period.end: # try to extend time series with remainder of last forecast
+            ta = list(extracted_data.values())[0][1] # time axis of first item
+            ta_end = ta.total_period().end
+            if ta_end < utc_period.end: # try to extend extracted data with remainder of last forecast
                 sec_to_extend = utc_period.end - ta_end
                 drop = self.nb_fc_to_drop + self.fc_len_to_concat
                 idx = np.argmax(self.lead_times_in_sec[drop:] - self.lead_times_in_sec[drop] >= sec_to_extend)
-                # TODO: Errorhandling for idx here
+                if idx == 0:
+                    raise ConcatDataRepositoryError( "The latest time in repository is earlier than the end of the "
+                                                    "period for which data is requested")
                 extra_data, _ = self._get_data_from_dataset(dataset, input_source_types,
                                     {'latest_available_forecasts': {'number of forecasts': 1,
                                                                     'forecasts_older_than': ta_end}},
                                     geo_location_criteria, nb_fc_to_drop=drop, nb_lead_intervals=idx,
                                     concat=False) # note: no concat here
+                ta_extra = list(extra_data.values())[0][1][0]
+                ta = api.TimeAxis(api.UtcTimeVector.from_numpy(np.append(ta.time_points, ta_extra.time_points[1:])))
+                extracted_data = {k: (np.concatenate((extracted_data[k][0], np.squeeze(extra_data[k][0], axis=0))), ta)
+                                                                                for k in list(extracted_data.keys())}
             return self._convert_to_geo_timeseries(extracted_data, geo_pts, concat=True)
 
 
