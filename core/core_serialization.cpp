@@ -166,6 +166,8 @@ void shyft::core::geo_cell_data::serialize(Archive& ar, const unsigned int versi
 template <class Archive>
 void shyft::core::hbv_snow::state::serialize(Archive & ar, const unsigned int file_version) {
     ar
+    & core_nvp("sp", sp)
+    & core_nvp("sw", sw)
     & core_nvp("swe",swe)
     & core_nvp("sca",sca)
     ;

@@ -36,7 +36,7 @@ PTSSKOptModel.create_full_model_clone.__doc__ = create_full_model_clone.__doc__
 PTSSKCellAll.vector_t = PTSSKCellAllVector
 PTSSKCellOpt.vector_t = PTSSKCellOptVector
 PTSSKState.vector_t = PTSSKStateVector
-PTSSKState.serializer_t= PTSSKStateIo
+#PTSSKState.serializer_t= PTSSKStateIo
 PTSSKStateVector.push_back = lambda self, x: self.append(x)
 
 #decorate StateWithId for serialization support

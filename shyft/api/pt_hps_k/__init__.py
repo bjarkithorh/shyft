@@ -36,7 +36,7 @@ PTHPSKOptModel.create_full_model_clone.__doc__ = create_full_model_clone.__doc__
 PTHPSKCellAll.vector_t = PTHPSKCellAllVector
 PTHPSKCellOpt.vector_t = PTHPSKCellOptVector
 PTHPSKState.vector_t = PTHPSKStateVector
-PTHPSKState.serializer_t= PTHPSKStateIo
+#PTHPSKState.serializer_t= PTHPSKStateIo
 
 #decorate StateWithId for serialization support
 def serialize_to_bytes(state_with_id_vector):

@@ -27,54 +27,14 @@
 
 #include "time_series.h"
 #include "utctime_utilities.h"
+#include "hbv_snow_common.h"
 
 namespace shyft {
     namespace core {
         namespace hbv_physical_snow {
             using namespace std;
-
+            using namespace hbv_snow_common;
             static const double tol = 1.0e-10;
-
-            /** \brief integrate function f given as linear interpolated
-             * between the f_i(x_i) from a to b for a, b in x.  If
-             * f_rhs_is_zero is set, f(b) = 0, unless b = x[i] for some i in
-             * [0,n).
-             */
-            inline double integrate(vector<double> f, vector<double> x,
-                                    size_t n, double a, double b,
-                                    bool f_b_is_zero=false) {
-                size_t left = 0;
-                double area = 0.0;
-                double f_l = 0.0;
-                double x_l = a;
-                while (a > x[left]) ++left;
-
-                // Linear interpolation of start point
-                if (fabs(a - x[left]) > 1.0e-8 && left > 0) {
-                    --left;
-                    f_l = ((f[left + 1] - f[left]) /
-                           (x[left + 1] - x[left]) * (a - x[left]) + f[left]);
-                } else
-                    f_l = f[left];
-
-                while (left < n - 1) {
-                    if (b >= x[left + 1]) {
-                        area += 0.5*(f_l + f[left + 1])*(x[left + 1] - x_l);
-                        x_l = x[left + 1];
-                        f_l = f[left + 1];
-                        ++left;
-                    }
-                    else {
-                        if (! f_b_is_zero)
-                            area += (f_l + 0.5 * (f[left + 1] - f_l) /
-                                     (x[left + 1] - x_l) * (b - x_l))*(b - x_l);
-                        else
-                            area += 0.5*f_l*(b - x_l);
-                        break;
-                    }
-                }
-                return area;
-            }
 
             struct parameter {
 
@@ -191,36 +151,14 @@ namespace shyft {
                       surface_heat(surface_heat), swe(swe), sca(sca)
                 {}
 
-                void distribute(const parameter& p) {
-                    auto s = p.s;
-                    const auto I_n = p.intervals.size();
-
-                    sp = vector<double>(I_n, 0.0);
-                    sw = vector<double>(I_n, 0.0);
-                    if (swe <= 1.0e-3 || sca <= 1.0e-3) {
-                        swe = sca = 0.0;
-                    } else {
-                        for (size_t i=0; i<I_n; ++i)
-                            sp[i] = sca < p.intervals[i] ? 0.0 : s[i] * swe;
-
-                        auto temp_swe = integrate(sp, p.intervals, I_n, 0.0, sca, true);
-
-                        if (temp_swe < swe) {
-                            const double corr1 = swe/temp_swe*p.lw;
-                            const double corr2 = swe/temp_swe*(1.0 - p.lw);
-                            for (size_t i=0; i<I_n; ++i) {
-                                sw[i] = corr1 * sp[i];
-                                sp[i] *= corr2;
-                            }
-                        } else
-                            sw = vector<double>(I_n, 0.0);
-                    }
-                }
+                void distribute(const parameter& p) { distribute_snow(p, sp, sw,swe,sca);}
 
 
                 bool operator==(const state &x) const {
                     const double eps = 1e-6;
                     if (albedo.size() != x.albedo.size()) return false;
+                    if (sp.size() != sw.size()) return false;
+
                     if (iso_pot_energy.size() != x.iso_pot_energy.size()) {
                         return false;
                     }
@@ -230,6 +168,8 @@ namespace shyft {
                                 eps) {
                             return false;
                         }
+                        if (fabs(sp[i]-x.sp[i])>= eps || fabs(sw[i]-x.sw[i])>=eps)
+                            return false;
                     }
 
                     return fabs(surface_heat - x.surface_heat) < eps
@@ -285,8 +225,7 @@ namespace shyft {
                 const double sigma = 5.670373e-8;
                 const double BB0{0.98*sigma*pow(273.15,4)};
 
-                static inline void refreeze(double &sp, double &sw, const double rain,
-                        const double potmelt, const double lw) {
+                static inline void refreeze(double &sp, double &sw, const double rain, const double potmelt, const double lw) {
                     // Note that the above calculations might violate the mass
                     // balance due to rounding errors. A fix might be to
                     // replace sw by a sw_fraction, sp with s_tot, and compute
@@ -304,8 +243,7 @@ namespace shyft {
                 }
 
 
-                static inline void update_state(double &sp, double &sw, const double rain,
-                        const double potmelt, const double lw) {
+                static inline void update_state(double &sp, double &sw, const double rain,  const double potmelt, const double lw) {
                     if (sp > potmelt) {
                         sw += potmelt + rain;
                         sp -= potmelt;
@@ -578,8 +516,7 @@ namespace shyft {
                             refreeze(s.sp[i], s.sw[i], rain,
                                      p.cfr*potential_melt[i], lw);
                         } else {
-                            update_state(s.sp[i], s.sw[i], rain, potential_melt[i],
-                                         lw);
+                            update_state(s.sp[i], s.sw[i], rain, potential_melt[i], lw);
                         }
                     }
 

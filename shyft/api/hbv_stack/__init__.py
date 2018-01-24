@@ -34,7 +34,7 @@ HbvModel.opt_model_t =HbvOptModel
 HbvCellAll.vector_t = HbvCellAllVector
 HbvCellOpt.vector_t = HbvCellOptVector
 HbvState.vector_t = HbvStateVector
-HbvState.serializer_t= HbvStateIo
+#HbvState.serializer_t= HbvStateIo
 
 #decorate StateWithId for serialization support
 def serialize_to_bytes(state_with_id_vector):

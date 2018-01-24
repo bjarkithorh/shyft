@@ -2,7 +2,6 @@
 #include "expose_statistics.h"
 #include "api/api.h"
 #include "api/api_state.h"
-
 namespace expose {
     using namespace boost::python;
     namespace py=boost::python;
@@ -131,7 +130,7 @@ namespace expose {
       cell_state_io<T>(cell_name);
     }
 
-
+    
     template <class M>
     static void model(const char *model_name,const char *model_doc) {
         char m_doc[5000];
@@ -358,6 +357,7 @@ namespace expose {
         .add_property("cells",&M::get_cells,"cells of the model")
 
          ;
+
     }
 
     template <class F, class O>
