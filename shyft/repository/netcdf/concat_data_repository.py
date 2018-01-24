@@ -39,7 +39,6 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
         # TODO: check all versions of get_forecasts
         # TODO: set ut get_forecast_ensembles
         # TODO: extend so that we can chose periodicity (i.e onle pick EC00 , etc)
-        # TODO: extend with extra intervals when utc_period not covered in get_timeseries
         # TODO: check if relative humidity is in file
         # TODO: move configuration to config
         # TODO: _tranform, conversion parameters should be moved to config
@@ -99,10 +98,9 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
 
         if self.selection_criteria is not None: self._validate_selection_criteria()
 
-    def _get_time_structure_from_dataset(self, dataset, nb_fc_to_drop=None):
-
-        if nb_fc_to_drop is None:
-            nb_fc_to_drop = self.nb_fc_to_drop
+    def _get_time_structure_from_dataset(self, dataset):
+        nb_fc_to_drop = self.nb_fc_to_drop
+        fc_periodicity = self.fc_periodicity
         time = dataset.variables.get("time", None)
         lead_time = dataset.variables.get("lead_time", None)
         if not all([time, lead_time]):
@@ -114,10 +112,10 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
         if nb_fc_to_drop > len(self.lead_time) - 1:
             raise ConcatDataRepositoryError("nb_fc_to_drop is too large for dataset")
         self.lead_times_in_sec = lead_time[:] * 3600.
-        self.fc_interval = time[self.fc_periodicity] - time[0]  # Adjust this with periodicity
+        # self.fc_interval = time[fc_periodicity] - time[0]
         time_shift_with_drop = time + self.lead_times_in_sec[nb_fc_to_drop]
-        # TODO: Errorhandling required?
-        idx_max = np.argmax(time[0] + self.lead_times_in_sec >= time_shift_with_drop[self.fc_periodicity])
+        # TODO: Errorhandling for idx_max required?
+        idx_max = np.argmax(time[0] + self.lead_times_in_sec >= time_shift_with_drop[fc_periodicity])
         self.fc_len_to_concat = idx_max - nb_fc_to_drop
 
     def get_timeseries(self, input_source_types, utc_period, geo_location_criteria=None):
@@ -245,8 +243,9 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
             else:
                 nb_lead_intervals = self.nb_lead_intervals
         issubset = True if len(lead_times_in_sec) > nb_fc_to_drop + nb_lead_intervals + 1 else False
-        time_slice, lead_time_slice = self._make_time_slice(nb_fc_to_drop, nb_lead_intervals, fc_selection_criteria)
-        time = self.time[time_slice]
+        time_slice, lead_time_slice, m_t = self._make_time_slice(nb_fc_to_drop, nb_lead_intervals, fc_selection_criteria)
+        # time = self.time[time_slice]
+        time = self.time[time_slice][m_t[time_slice]]
 
         # Get data by slicing into dataset
         raw_data = {}
@@ -266,12 +265,13 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
                 data_slice[dims.index(dim_grid)] = xy_slice
                 data_slice[dims.index("lead_time")] = data_lead_time_slice
                 data_slice[dims.index("time")] = time_slice  # data_time_slice
-                new_slice = [m_xy[xy_slice] if dim == dim_grid else slice(None) for dim in dims]
+                xy_slice_mask = [m_xy[xy_slice] if dim == dim_grid else slice(None) for dim in dims]
+                time_slice_mask = [m_t[time_slice] if dim == 'time' else slice(None) for dim in dims]
 
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore", message="invalid value encountered in greater")
                     warnings.filterwarnings("ignore", message="invalid value encountered in less_equal")
-                    pure_arr = data[data_slice][new_slice]
+                    pure_arr = data[data_slice][xy_slice_mask][time_slice_mask]
 
                 if 'ensemble_member' not in dims: # add axis for 'ensemble_member'
                     pure_arr = pure_arr[:,:,np.newaxis,:]
@@ -439,6 +439,11 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
     def _make_time_slice(self, nb_fc_to_drop, nb_lead_intervals, fc_selection_criteria):
         time = self.time
         lead_times_in_sec = self.lead_times_in_sec
+        # Find periodicity mask
+        fc_periodicity = self.fc_periodicity
+        m_t = np.zeros(time.shape, dtype=bool)
+        m_t[::-fc_periodicity] = True # newest forecast last
+
         k, v = list(fc_selection_criteria.items())[0]
         nb_extra_intervals = 0
         if k == 'forecasts_within_period':
@@ -466,19 +471,17 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
                     raise ConcatDataRepositoryError(
                         "The earliest time in repository ({}) is later than or at the start of the period for which data is "
                         "requested ({})".format(UTC.to_string(int(time[0])), UTC.to_string(t)))
-            if idx + 1 < n:
+            if idx + 1 < n * fc_periodicity:
                 raise ConcatDataRepositoryError(
                     "The number of forecasts available in repo ({}) and earlier than the parameter "
-                    "'forecasts_older_than' ({}) is less than the number of forecasts requested ({})".format(
-                        idx + 1, UTC.to_string(t), n))
-            time_slice = slice(idx - n + 1, idx + 1)
+                    "'forecasts_older_than' ({}) is less than the number of forecasts requested ({}) " ""
+                    "for the specified periodicity ({})".format(idx + 1, UTC.to_string(t), n, fc_periodicity))
+            time_slice = slice(idx - n * fc_periodicity + 1, idx + 1)
         elif k == 'forecasts_at_reference_times':
             raise ConcatDataRepositoryError(
                 "'forecasts_at_reference_times' selection criteria not supported yet.")
         lead_time_slice = slice(nb_fc_to_drop, nb_fc_to_drop + nb_lead_intervals)
-        # For checking
-        # print('Time slice:', UTC.to_string(int(time[time_slice][0])), UTC.to_string(int(time[time_slice][-1])))
-        return time_slice, lead_time_slice
+        return time_slice, lead_time_slice, m_t
 
     def _transform_raw(self, data, time, lead_time, concat):
         # TODO; check time axis type (fixed ts_delta or not)
