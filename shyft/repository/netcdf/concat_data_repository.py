@@ -64,21 +64,28 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
         with Dataset(self._filename) as dataset:
             self._get_time_structure_from_dataset(dataset)
 
+        # TODO: move all mappings to config file
         # Field names and mappings netcdf_name: shyft_name
-        self._arome_shyft_map = {'dew_point_temperature_2m': 'dew_point_temperature_2m',
-                                 'surface_air_pressure': 'surface_air_pressure',
-                                 "air_temperature_2m": "temperature",
-                                 "precipitation_amount_acc": "precipitation",
-                                 "x_wind_10m": "x_wind",
-                                 "y_wind_10m": "y_wind",
-                                 "integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time": "radiation"}
+        self._shyft_map = {"dew_point_temperature_2m": "dew_point_temperature_2m",
+                           "surface_air_pressure": "surface_air_pressure",
+                           "relative_humidity_2m": "relative_humidity",
+                           "air_temperature_2m": "temperature",
+                           "precipitation_amount": "precipitation",
+                           "precipitation_amount_acc": "precipitation",
+                           "x_wind_10m": "x_wind",
+                           "y_wind_10m": "y_wind",
+                           "windspeed_10m": "wind_speed",
+                           "integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time": "radiation"}
 
         self.var_units = {'dew_point_temperature_2m': ['K'],
                           'surface_air_pressure': ['Pa'],
+                          "relative_humidity_2m": ['1'],
                           "air_temperature_2m": ['K'],
+                          "precipitation_amount": ['kg/m^2'],
                           "precipitation_amount_acc": ['kg/m^2'],
                           "x_wind_10m": ['m/s'],
                           "y_wind_10m": ['m/s'],
+                          "windspeed_10m": ['m/s'],
                           "integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time": ['W s/m^2']}
 
         self._shift_fields = ("precipitation_amount_acc",
@@ -134,7 +141,7 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
             dictionary keyed by time series name, where values are api vectors of geo
             located timeseries.
         """
-        no_shift_fields = set([self._arome_shyft_map[k] for k in self._shift_fields]).isdisjoint(input_source_types)
+        no_shift_fields = set([self._shyft_map[k] for k in self._shift_fields]).isdisjoint(input_source_types)
         if self.fc_len_to_concat < 0 \
             or no_shift_fields and self.nb_fc_to_drop + self.fc_len_to_concat > len(self.lead_time) \
             or not no_shift_fields and self.nb_fc_to_drop + self.fc_len_to_concat + 1 > len(self.lead_time):
@@ -224,11 +231,11 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
         else:
             raise ConcatDataRepositoryError("Unrecognized selection criteria.")
 
-    def _get_data_from_dataset(self, dataset, input_source_types, fc_selection_criteria,
-                               geo_location_criteria, nb_fc_to_drop=None, nb_lead_intervals=None, concat=False, ensemble_member=None):
+    def _get_data_from_dataset(self, dataset, input_source_types, fc_selection_criteria, geo_location_criteria,
+                               nb_fc_to_drop=None, nb_lead_intervals=None, concat=False, ensemble_member=None):
 
         # validate input and adjust input_source_types
-        ts_id, input_source_types, no_temp = self._validate_input(dataset, input_source_types, geo_location_criteria)
+        ts_id, input_source_types, no_temp, rh_not_ok = self._validate_input(dataset, input_source_types, geo_location_criteria)
 
         # find geo_slice for slicing dataset
         geo_pts, m_xy, xy_slice, dim_grid = self._get_geo_slice(dataset, ts_id)
@@ -250,7 +257,7 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
         # Get data by slicing into dataset
         raw_data = {}
         for k in dataset.variables.keys():
-            if self._arome_shyft_map.get(k, None) in input_source_types:
+            if self._shyft_map.get(k, None) in input_source_types:
                 if k in self._shift_fields and issubset:  # Add one to lead_time slice
                     data_lead_time_slice = slice(lead_time_slice.start, lead_time_slice.stop + 1)
                 else:
@@ -281,29 +288,31 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
                 if np.isnan(pure_arr).any():
                     print("NaN found in pure_arr for {} see indices {}".format(k, np.unravel_index(np.argmax(np.isnan(pure_arr)), pure_arr.shape)))
 
-                raw_data[self._arome_shyft_map[k]] = pure_arr, k
+                raw_data[self._shyft_map[k]] = pure_arr, k
 
+        # TODO: do check if wind speed in dataset
         # Replace x/y-wind with wind speed
         if set(("x_wind", "y_wind")).issubset(raw_data):
             x_wind, _ = raw_data.pop("x_wind")
             y_wind, _ = raw_data.pop("y_wind")
             raw_data["wind_speed"] = np.sqrt(np.square(x_wind) + np.square(y_wind)), "wind_speed"
 
-        # TODO: skip this if relative humidity available (Arome case)
         # Calculate relative humidity if required
-        if set(("surface_air_pressure", "dew_point_temperature_2m")).issubset(raw_data):
-            sfc_p, _ = raw_data.pop("surface_air_pressure")
-            dpt_t, _ = raw_data.pop("dew_point_temperature_2m")
-            if no_temp:
-                sfc_t, _ = raw_data.pop("temperature")
+        if rh_not_ok:
+            if set(("surface_air_pressure", "dew_point_temperature_2m")).issubset(raw_data):
+                sfc_p, _ = raw_data.pop("surface_air_pressure")
+                dpt_t, _ = raw_data.pop("dew_point_temperature_2m")
+                if no_temp:
+                    sfc_t, _ = raw_data.pop("temperature")
+                else:
+                    sfc_t, _ = raw_data["temperature"]
+                ncf_name_rh = next((n_nm for n_nm, s_nm in self._shyft_map.items() if s_nm == "relative_humidity"), None)
+                raw_data["relative_humidity"] = self.calc_RH(sfc_t, dpt_t, sfc_p), ncf_name_rh
             else:
-                sfc_t, _ = raw_data["temperature"]
-            raw_data["relative_humidity"] = self.calc_RH(sfc_t, dpt_t, sfc_p), "relative_humidity"
+                raise ConcatDataRepositoryError("Not able to retrieve Relative Humidity from dataset")
 
         data_lead_time_slice = slice(lead_time_slice.start, lead_time_slice.stop + 1)
-        # return raw_data, time_ext, lead_times_in_sec[data_lead_time_slice], geo_pts
         extracted_data = self._transform_raw(raw_data, time, lead_times_in_sec[data_lead_time_slice], concat)
-        # return self._convert_to_geo_timeseries(extracted_data, geo_pts, concat)
         return extracted_data, geo_pts
 
     def _validate_input(self, dataset, input_source_types, geo_location_criteria):
@@ -316,6 +325,7 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
             ts_id_key = [k for (k, v) in dataset.variables.items() if getattr(v, 'cf_role', None) == 'timeseries_id'][0]
             ts_id = dataset.variables[ts_id_key][:]
 
+        # TODO: do check if x_vind in dataset
         # Process input source types
         if "wind_speed" in input_source_types:
             input_source_types = list(input_source_types)  # We change input list, so take a copy
@@ -326,8 +336,10 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
         no_temp = False
         if "temperature" not in input_source_types: no_temp = True
 
-        # TODO: If available in raw file, use that - see AromeConcatRepository
-        if "relative_humidity" in input_source_types:
+        # Need extra variables to calculate Relative Humidity if not available in dataset
+        ncf_nm = next((n_nm for n_nm, s_nm in self._shyft_map.items() if s_nm == "relative_humidity"), None)
+        rh_not_ok = "relative_humidity" in input_source_types and (ncf_nm is None or ncf_nm not in dataset.variables)
+        if rh_not_ok:
             if not isinstance(input_source_types, list):
                 input_source_types = list(input_source_types)  # We change input list, so take a copy
             input_source_types.remove("relative_humidity")
@@ -336,12 +348,12 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
 
         # Check units match
         unit_ok = {k: dataset.variables[k].units in self.var_units[k]
-                   for k in dataset.variables.keys() if self._arome_shyft_map.get(k, None) in input_source_types}
+                   for k in dataset.variables.keys() if self._shyft_map.get(k, None) in input_source_types}
         if not all(unit_ok.values()):
             raise ConcatDataRepositoryError("The following variables have wrong unit: {}.".format(
                 ', '.join([k for k, v in unit_ok.items() if not v])))
 
-        return ts_id, input_source_types, no_temp
+        return ts_id, input_source_types, no_temp, rh_not_ok
 
     def _get_geo_slice(self, dataset, ts_id):
         # Find xy slicing and z
@@ -529,7 +541,7 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
                 return (v, t)
 
         def concat_v(x):
-            return x.reshape(-1, *x.shape[-2:])  # shape = (nb_forecasts*nb_lead_times, nb_ensemble_members, nb_points)
+            return x.reshape(-1, * x.shape[-2:])  # shape = (nb_forecasts*nb_lead_times, nb_ensemble_members, nb_points)
 
         def forecast_v(x):
             return x  # shape = (nb_forecasts, nb_lead_times, nb_ensemble_members, nb_points)
@@ -537,34 +549,52 @@ class ConcatDataRepository(interfaces.GeoTsRepository):
         def air_temp_conv(T, fcn):
             return fcn(T - 273.15)
 
-        def prec_acc_conv(p, fcn):
-            f = api.deltahours(1) / (lead_time[1:] - lead_time[:-1])  # conversion from mm/delta_t to mm/1hour
-            return fcn(np.clip((p[:, 1:, :, :] - p[:, :-1, :, :]) * f[np.newaxis, :, np.newaxis, np.newaxis], 0.0, 1000.0))
+        def prec_acc_conv(v, ak, fcn):
+            # TODO: extend with prec_conv if "precipitation_amount" is input, need to set flag for this case
+            p = v
+            if ak == "precipitation_amount_acc":
+                f = api.deltahours(1) / (lead_time[1:] - lead_time[:-1])  # conversion from mm/delta_t to mm/1hour
+                res = fcn(np.clip((p[:, 1:, :, :] - p[:, :-1, :, :]) * f[np.newaxis, :, np.newaxis, np.newaxis], 0.0, 1000.0))
+            return res
 
         def rad_conv(r, fcn):
             dr = r[:, 1:, :, :] - r[:, :-1, :, :]
             return fcn(np.clip(dr / (lead_time[1:] - lead_time[:-1])[np.newaxis, :, np.newaxis, np.newaxis], 0.0, 5000.0))
 
         # Unit- and aggregation-dependent conversions go here
+        # if concat:
+        #     convert_map = {"wind_speed": lambda x, t: (concat_v(x), concat_t(t)),
+        #                    "relative_humidity": lambda x, t: (concat_v(x), concat_t(t)),
+        #                    "temperature": lambda x, t: (air_temp_conv(x, concat_v), concat_t(t)),
+        #                    "radiation": lambda x, t: (rad_conv(x, concat_v), concat_t(t)),
+        #                    # "precipitation_amount": lambda x, t: (prec_conv(x), dacc_time(t)),
+        #                    "precipitation": lambda x, t: (prec_acc_conv(x, concat_v), concat_t(t))}
+        # else:
+        #     convert_map = {"wind_speed": lambda x, t: (forecast_v(x), forecast_t(t)),
+        #                    "relative_humidity": lambda x, t: (forecast_v(x), forecast_t(t)),
+        #                    "temperature": lambda x, t: (air_temp_conv(x, forecast_v), forecast_t(t)),
+        #                    "radiation": lambda x, t: (rad_conv(x, forecast_v), forecast_t(t, True)),
+        #                    # "precipitation_amount": lambda x, t: (prec_conv(x), dacc_time(t)),
+        #                    "precipitation": lambda x, t: (prec_acc_conv(x, forecast_v), forecast_t(t, True))}
+
+        # Unit- and aggregation-dependent conversions go here
         if concat:
-            convert_map = {"wind_speed": lambda x, t: (concat_v(x), concat_t(t)),
-                           "relative_humidity": lambda x, t: (concat_v(x), concat_t(t)),
-                           "air_temperature_2m": lambda x, t: (air_temp_conv(x, concat_v), concat_t(t)),
-                           "integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time":
-                               lambda x, t: (rad_conv(x, concat_v), concat_t(t)),
+            convert_map = {"wind_speed": lambda v, ak, t: (concat_v(v), concat_t(t)),
+                           "relative_humidity": lambda v, ak, t: (concat_v(v), concat_t(t)),
+                           "temperature": lambda v, ak, t: (air_temp_conv(v, concat_v), concat_t(t)),
+                           "radiation": lambda v, ak, t: (rad_conv(v, concat_v), concat_t(t)),
                            # "precipitation_amount": lambda x, t: (prec_conv(x), dacc_time(t)),
-                           "precipitation_amount_acc": lambda x, t: (prec_acc_conv(x, concat_v), concat_t(t))}
+                           "precipitation": lambda v, ak, t: (prec_acc_conv(v, ak, concat_v), concat_t(t))}
         else:
-            convert_map = {"wind_speed": lambda x, t: (forecast_v(x), forecast_t(t)),
-                           "relative_humidity": lambda x, t: (forecast_v(x), forecast_t(t)),
-                           "air_temperature_2m": lambda x, t: (air_temp_conv(x, forecast_v), forecast_t(t)),
-                           "integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time":
-                               lambda x, t: (rad_conv(x, forecast_v), forecast_t(t, True)),
+            convert_map = {"wind_speed": lambda v, ak, t: (forecast_v(v), forecast_t(t)),
+                           "relative_humidity": lambda v, ak, t: (forecast_v(v), forecast_t(t)),
+                           "temperature": lambda v, ak, t: (air_temp_conv(v, forecast_v), forecast_t(t)),
+                           "radiation": lambda v, ak, t: (rad_conv(v, forecast_v), forecast_t(t, True)),
                            # "precipitation_amount": lambda x, t: (prec_conv(x), dacc_time(t)),
-                           "precipitation_amount_acc": lambda x, t: (prec_acc_conv(x, forecast_v), forecast_t(t, True))}
+                           "precipitation": lambda v, ak, t: (prec_acc_conv(v, ak, forecast_v), forecast_t(t, True))}
         res = {}
         for k, (v, ak) in data.items():
-            res[k] = pad(*convert_map[ak](v, time))
+            res[k] = pad(*convert_map[k](v, ak, time))
         return res
 
     def _convert_to_geo_timeseries(self, data, geo_pts, concat):
