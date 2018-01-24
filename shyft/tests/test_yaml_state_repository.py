@@ -4,7 +4,7 @@ import os
 import glob
 from shyft.api import Calendar, YMDhms
 from shyft.api import GammaSnowState, KirchnerState
-from shyft.repository.yaml_state_repository import YamlStateRepository
+from shyft.repository.yaml_state_repository import YamlStateRepository, StateSerializer
 from shyft.api.pt_gs_k import PTGSKState, PTGSKStateVector
 
 
@@ -36,7 +36,7 @@ class YamlStateRepositoryTestCase(unittest.TestCase):
         return r
 
     def test_create_empty_gives_no_state(self):
-        state_repository = YamlStateRepository(self._test_state_directory)
+        state_repository = YamlStateRepository(self._test_state_directory, StateSerializer())
         self.assertIsNotNone(state_repository)
         self.assertEqual(len(state_repository.find_state()), 0, "We expect 0 states for empty repository")
 
