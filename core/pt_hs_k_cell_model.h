@@ -193,7 +193,7 @@ namespace shyft {
                         kirchner_discharge.set(idx, mmh_to_m3s(state.kirchner.q, destination_area));
                         snow_sca.set(idx, state.snow.sca);
                         snow_swe.set(idx, state.snow.swe);
-						for (int i = 0; i < state.snow.sp.size(); ++i) {
+						for (size_t i = 0; i < state.snow.sp.size(); ++i) {
 							sp[i].set(idx, state.snow.sp[i]);
 							sw[i].set(idx, state.snow.sw[i]);
 						}

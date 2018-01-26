@@ -164,9 +164,9 @@ namespace shyft {
 				state_collector(const timeaxis_t& time_axis)
 					: collect_state(false), destination_area(0.0),
 					kirchner_discharge(time_axis, 0.0),
+					hps_surface_heat(time_axis, 0.0),
 					hps_swe(time_axis, 0.0),
 					hps_sca(time_axis, 0.0),
-					hps_surface_heat(time_axis, 0.0),
 					time_axis(time_axis),
 					start_step(0),
 					n_steps(time_axis.size())
@@ -213,7 +213,7 @@ namespace shyft {
                         hps_sca.set(idx, state.hps.sca);
                         hps_swe.set(idx, state.hps.swe);
                         hps_surface_heat.set(idx, state.hps.surface_heat);
-						for (int i = 0; i < state.hps.sp.size(); ++i) {
+						for (size_t i = 0; i < state.hps.sp.size(); ++i) {
 							sp[i].set(idx, state.hps.sp[i]);
 							sw[i].set(idx, state.hps.sw[i]);
 							albedo[i].set(idx, state.hps.albedo[i]);
