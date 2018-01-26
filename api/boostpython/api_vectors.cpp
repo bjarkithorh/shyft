@@ -200,6 +200,7 @@ namespace expose {
         np_import();
         expose_str_vector("StringVector");
         expose_vector<double>("DoubleVector");
+		expose_vector<vector<double>>("DoubleVectorVector");
         expose_vector<int>("IntVector");
         expose_vector<char>("ByteVector");
         expose_vector<utctime>("UtcTimeVector");

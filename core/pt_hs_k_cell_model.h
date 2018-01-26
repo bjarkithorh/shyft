@@ -52,14 +52,14 @@ namespace shyft {
                 all_response_collector() : destination_area(0.0) {}
                 explicit all_response_collector(const double destination_area) : destination_area(destination_area) {}
                 all_response_collector(const double destination_area, const timeaxis_t& time_axis)
-                 : destination_area(destination_area), avg_discharge(time_axis, 0.0),charge_m3s(time_axis,0.0),
-                   snow_outflow(time_axis, 0.0), snow_sca(time_axis,0.0),snow_swe(time_axis,0.0),glacier_melt(time_axis, 0.0), ae_output(time_axis, 0.0), pe_output(time_axis, 0.0) {}
+                 : destination_area(destination_area), avg_discharge(time_axis, 0.0), charge_m3s(time_axis, 0.0),
+                   snow_outflow(time_axis, 0.0), snow_sca(time_axis, 0.0), snow_swe(time_axis, 0.0), glacier_melt(time_axis, 0.0), ae_output(time_axis, 0.0), pe_output(time_axis, 0.0) {}
 
                 /**\brief called before run to allocate space for results */
                 void initialize(const timeaxis_t& time_axis, int start_step, int n_steps, double area) {
                     destination_area = area;
                     ts_init(avg_discharge, time_axis, start_step, n_steps, ts_point_fx::POINT_AVERAGE_VALUE);
-                    ts_init(charge_m3s   , time_axis, start_step, n_steps, ts_point_fx::POINT_AVERAGE_VALUE);
+                    ts_init(charge_m3s,    time_axis, start_step, n_steps, ts_point_fx::POINT_AVERAGE_VALUE);
                     ts_init(snow_outflow,  time_axis, start_step, n_steps, ts_point_fx::POINT_AVERAGE_VALUE);
                     ts_init(snow_sca,      time_axis, start_step, n_steps, ts_point_fx::POINT_AVERAGE_VALUE);
                     ts_init(snow_swe,      time_axis, start_step, n_steps, ts_point_fx::POINT_AVERAGE_VALUE);
@@ -150,11 +150,17 @@ namespace shyft {
                 pts_t kirchner_discharge; ///< Kirchner state instant Discharge given in m^3/s
                 pts_t snow_swe;
                 pts_t snow_sca;
+				vector<pts_t> sp;
+				vector<pts_t> sw;
+
+				timeaxis_t time_axis;
+				int start_step;
+				int n_steps;
 
                 state_collector() : collect_state(false), destination_area(0.0) {}
                 explicit state_collector(const timeaxis_t& time_axis)
                  : collect_state(false), destination_area(0.0), kirchner_discharge(time_axis, 0.0),
-                    snow_swe(time_axis, 0.0), snow_sca(time_axis, 0.0) { /* Do nothing */ }
+                    snow_swe(time_axis, 0.0), snow_sca(time_axis, 0.0), time_axis(time_axis), start_step(0), n_steps(time_axis.size()) { /* Do nothing */ }
                 /** brief called before run, prepares state time-series
                  *
                  * with preallocated room for the supplied time-axis.
@@ -168,12 +174,30 @@ namespace shyft {
                     ts_init(snow_sca, ta, start_step, n_steps, ts_point_fx::POINT_INSTANT_VALUE);
                     ts_init(snow_swe, ta, start_step, n_steps, ts_point_fx::POINT_INSTANT_VALUE);
                 }
+				void initialize_vector_states(size_t size) {
+					sp.resize(size);
+					sw.resize(size);
+					timeaxis_t ta = collect_state ? time_axis : timeaxis_t(time_axis.start(), time_axis.delta(), 0);
+					for (auto& item : sp)
+						ts_init(item, ta, start_step, n_steps, ts_point_fx::POINT_INSTANT_VALUE);
+					for (auto& item : sw)
+						ts_init(item, ta, start_step, n_steps, ts_point_fx::POINT_INSTANT_VALUE);
+				}
+
                 /** called by the cell.run for each new state*/
                 void collect(size_t idx, const state_t& state) {
+					if (sp.size() == 0)
+						initialize_vector_states(state.snow.sp.size());
+
                     if (collect_state) {
                         kirchner_discharge.set(idx, mmh_to_m3s(state.kirchner.q, destination_area));
                         snow_sca.set(idx, state.snow.sca);
                         snow_swe.set(idx, state.snow.swe);
+						for (int i = 0; i < state.snow.sp.size(); ++i) {
+							sp[i].set(idx, state.snow.sp[i]);
+							sw[i].set(idx, state.snow.sw[i]);
+						}
+
                     }
                 }
             };

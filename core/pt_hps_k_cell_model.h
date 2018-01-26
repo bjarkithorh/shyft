@@ -148,17 +148,28 @@ namespace shyft {
                 // these are the one that we collects from the response, to better understand the model::
                 double destination_area;
                 pts_t kirchner_discharge; ///< Kirchner state instant Discharge given in m^3/s
-                pts_t hps_swe;
-                pts_t hps_sca;
-                pts_t hps_surface_heat;
+				vector<pts_t> sp;
+				vector<pts_t> sw;
+				vector<pts_t> albedo;
+				vector<pts_t> iso_pot_energy;
+				pts_t hps_surface_heat;
+				pts_t hps_swe;
+				pts_t hps_sca;
+
+				timeaxis_t time_axis;
+				int start_step;
+				int n_steps;
 
                 state_collector() : collect_state(false), destination_area(0.0) {}
-                state_collector(const timeaxis_t& time_axis)
-                 : collect_state(false), destination_area(0.0),
-                   kirchner_discharge(time_axis, 0.0),
-                   hps_swe(time_axis, 0.0),
-                   hps_sca(time_axis, 0.0),
-                   hps_surface_heat(time_axis, 0.0)
+				state_collector(const timeaxis_t& time_axis)
+					: collect_state(false), destination_area(0.0),
+					kirchner_discharge(time_axis, 0.0),
+					hps_swe(time_axis, 0.0),
+					hps_sca(time_axis, 0.0),
+					hps_surface_heat(time_axis, 0.0),
+					time_axis(time_axis),
+					start_step(0),
+					n_steps(time_axis.size())
                 { /* Do nothing */ }
                 /** brief called before run, prepares state time-series
                  *
@@ -174,13 +185,40 @@ namespace shyft {
                     ts_init(hps_swe, ta, start_step, n_steps, ts_point_fx::POINT_INSTANT_VALUE);
                     ts_init(hps_surface_heat, ta, start_step, n_steps, ts_point_fx::POINT_INSTANT_VALUE);
                 }
+
+				void initialize_vector_states(size_t size) {
+					sp.resize(size);
+					sw.resize(size);
+					albedo.resize(size);
+					iso_pot_energy.resize(size);
+
+					timeaxis_t ta = collect_state ? time_axis : timeaxis_t(time_axis.start(), time_axis.delta(), 0);
+
+					for (auto& item : sp)
+						ts_init(item, ta, start_step, n_steps, ts_point_fx::POINT_INSTANT_VALUE);
+					for (auto& item : sw)
+						ts_init(item, ta, start_step, n_steps, ts_point_fx::POINT_INSTANT_VALUE);
+					for (auto& item : albedo)
+						ts_init(item, ta, start_step, n_steps, ts_point_fx::POINT_INSTANT_VALUE);
+					for (auto& item : iso_pot_energy)
+						ts_init(item, ta, start_step, n_steps, ts_point_fx::POINT_INSTANT_VALUE);
+				}
+
                 /** called by the cell.run for each new state*/
                 void collect(size_t idx, const state_t& state) {
+					if (sp.size() == 0)
+						initialize_vector_states(state.hps.sp.size());
                     if (collect_state) {
                         kirchner_discharge.set(idx, mmh_to_m3s(state.kirchner.q, destination_area));
                         hps_sca.set(idx, state.hps.sca);
                         hps_swe.set(idx, state.hps.swe);
                         hps_surface_heat.set(idx, state.hps.surface_heat);
+						for (int i = 0; i < state.hps.sp.size(); ++i) {
+							sp[i].set(idx, state.hps.sp[i]);
+							sw[i].set(idx, state.hps.sw[i]);
+							albedo[i].set(idx, state.hps.albedo[i]);
+							iso_pot_energy[i].set(idx, state.hps.iso_pot_energy[i]);
+						}
                     }
                 }
             };
