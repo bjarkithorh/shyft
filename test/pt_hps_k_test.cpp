@@ -70,8 +70,7 @@ TEST_CASE("test_call_stack") {
 
     // Initialize the state vectors
     kr::state kirchner_state {5.0};
-    hps::state hps_state(vector<double>(5, 0.4), vector<double>(5, 0.0),
-            30000.0, 10.0, 0.5);
+    hps::state hps_state(vector<double>(5, 0.4), vector<double>(5, 0.0),30000.0, 10.0, 0.5);
 
     // Initialize response
     response run_response;

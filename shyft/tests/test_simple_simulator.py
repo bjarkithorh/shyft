@@ -150,10 +150,10 @@ class SimulationTestCase(unittest.TestCase):
         state_repos = DefaultStateRepository(cfg.model_t, n_cells)
         s0 = state_repos.get_state(0)
         param = simulator.region_model.get_region_parameter()
-
-        if model_t in [pt_hs_k.PTHSKOptModel]:
-            for i in range(len(s0)):
-                s0[i].snow.distribute(param.hs)
+        # not needed, we auto initialize to default if not done explicitely
+        #if model_t in [pt_hs_k.PTHSKOptModel]:
+        #    for i in range(len(s0)):
+        #        s0[i].snow.distribute(param.hs)
         simulator.run(time_axis, s0)
         cid = 1
 

@@ -205,6 +205,7 @@ namespace shyft {
             priestley_taylor::calculator pt(parameter.pt.albedo, parameter.pt.alpha);
             hbv_snow::calculator<typename P::snow_parameter_t, typename S::snow_state_t> hbv_snow(parameter.hs);
             kirchner::calculator<kirchner::trapezoidal_average, typename P::kirchner_parameter_t> kirchner(parameter.kirchner);
+            state.snow.distribute(parameter.hs,false);// fix-up state to match parameter dimensions for snow-bins, but only if they are empty
 
             R response;
             const double glacier_fraction = geo_cell_data.land_type_fractions_info().glacier();

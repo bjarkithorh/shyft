@@ -297,6 +297,7 @@ namespace shyft {
 				hbv_soil::calculator<typename P::soil_parameter_t> soil(parameter.soil);
 				hbv_tank::calculator<typename P::tank_parameter_t> tank(parameter.tank);
 				R response;
+                state.snow.distribute(parameter.snow,false);// ensure dimensions for distributions match
 
                 const double glacier_fraction = geo_cell_data.land_type_fractions_info().glacier();
                 const double gm_direct = parameter.gm.direct_response; //glacier melt directly out of cell

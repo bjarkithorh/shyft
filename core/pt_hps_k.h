@@ -220,6 +220,9 @@ namespace shyft {
             priestley_taylor::calculator pt(parameter.pt.albedo, parameter.pt.alpha);
             const hbv_physical_snow::calculator<typename P::hps_parameter_t, typename S::hps_state_t, typename R::hps_response_t> hbv_physical_snow(parameter.hps);
             kirchner::calculator<kirchner::trapezoidal_average, typename P::kirchner_parameter_t> kirchner(parameter.kirchner);
+            // extra check for state.snow. that need to match up with dimension of the parameter.hps, to avoid core-dumps if user pass an 'empty' state
+            // into the system(it dimensions from the parameters to get right)
+            state.hps.distribute(parameter.hps,false);// fixup state to match parameter dimensions for snow-bins, but only if they are empty
 
             R response;
             const double total_lake_fraction = geo_cell_data.land_type_fractions_info().lake() + geo_cell_data.land_type_fractions_info().reservoir();

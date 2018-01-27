@@ -151,7 +151,15 @@ namespace shyft {
                       surface_heat(surface_heat), swe(swe), sca(sca)
                 {}
 
-                void distribute(const parameter& p) { distribute_snow(p, sp, sw,swe,sca);}
+                void distribute(const parameter& p, bool force=true) {
+                    if(force || sp.size() != p.s.size() || sw.size()!=p.s.size() ) {// if not force ,but a size miss-match
+                        distribute_snow(p, sp, sw,swe,sca);
+                    }
+                    if(sp.size()!= albedo.size()) { // .. user forgot to pass in correctly sized arrays, fix it
+                        albedo= vector<double>(sp.size(),0.4); // same as for gamma-snow
+                        iso_pot_energy=vector<double>(sp.size(),0.0);
+                    }
+                }
 
 
                 bool operator==(const state &x) const {

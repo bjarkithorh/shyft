@@ -109,7 +109,11 @@ namespace shyft {
                     }
                     return fabs(swe-x.swe)<eps && fabs(sca-x.sca)<eps;
                 }
-                void distribute(const parameter& p) { distribute_snow(p, sp, sw, swe, sca); }
+                void distribute(const parameter& p, bool force=true) {
+                    if(force || sp.size() != p.s.size() || sw.size()!=p.s.size() ) {// if not force ,but a size miss-match
+                        distribute_snow(p, sp, sw,swe,sca);
+                    }
+                }
                 x_serialize_decl();
             };
             struct response {

@@ -323,7 +323,7 @@ class ShyftApi(unittest.TestCase):
         self.assertAlmostEqual(t.scale_factor, 1.0)
         # create a ts with some points
         cal = api.Calendar()
-        start = cal.time(api.YMDhms(2015, 1, 1, 0, 0, 0))
+        start = cal.time(2015, 1, 1, 0, 0, 0)
         dt = api.deltahours(1)
         tsf = api.TsFactory()
         times = api.UtcTimeVector()
