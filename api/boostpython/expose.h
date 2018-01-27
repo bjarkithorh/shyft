@@ -152,6 +152,7 @@ namespace expose {
                 ,model_name);
         // NOTE: explicit expansion of the run_interpolate method is needed here, using this specific syntax
         auto run_interpolation_f= &M::run_interpolation;
+        auto run_interpolation_f_g=&M::run_interpolation_g;
 		auto interpolate_f = &M::interpolate;
         class_<M>(model_name,m_doc,no_init)
 	     .def(init<const M&>(py::arg("other_model"),"create a copy of the model"))
@@ -207,6 +208,24 @@ namespace expose {
                 doc_parameter("time_axis","TimeAxisFixedDeltaT","specifies the time-axis for the region-model, and thus the cells")
                 doc_returns("nothing","","")
 		 )
+		 .def("initialize_cell_environment",&M::initialize_cell_environment_g,(py::arg("self"),py::arg("time_axis")),
+                doc_intro("Initializes the cell enviroment (cell.env.ts* )")
+                doc_intro("")
+                doc_intro("The method initializes the cell environment, that keeps temperature, precipitation etc")
+                doc_intro("that is local to the cell.The initial values of these time - series is set to zero.")
+                doc_intro("The region-model time-axis is set to the supplied time-axis, so that")
+                doc_intro("the any calculation steps will use the supplied time-axis.")
+                doc_intro("This call is needed once prior to call to the .interpolate() or .run_cells() methods")
+                doc_intro("")
+                doc_intro("The call ensures that all cells.env ts are reset to zero, with a time-axis and")
+                doc_intro(" value-vectors according to the supplied time-axis.")
+                doc_intro(" Also note that the region-model.time_axis is set to the supplied time-axis.")
+                doc_intro("")
+                doc_parameters()
+                doc_parameter("time_axis","TimeAxis","specifies the time-axis (fixed type) for the region-model, and thus the cells")
+                doc_returns("nothing","","")
+		 )
+
 		 .def("interpolate", interpolate_f, (py::arg("self"),py::arg("interpolation_parameter"),py::arg("env"),py::arg("best_effort")=true),
                 doc_intro("do interpolation interpolates region_environment temp,precip,rad.. point sources")
                 doc_intro("to a value representative for the cell.mid_point().")
@@ -242,6 +261,20 @@ namespace expose {
                 doc_parameters()
                 doc_parameter("interpolation_parameter","InterpolationParameter","contains wanted parameters for the interpolation")
                 doc_parameter("time_axis","TimeAxisFixedDeltaT","should be equal to the time-axis the region_model is prepared running for")
+                doc_parameter("env","RegionEnvironment","contains the ref: region_environment type")
+                doc_parameter("best_effort","bool","default=True, don't throw, just return True/False if problem, with best_effort, unfilled values is nan")
+                doc_returns("success","bool","True if interpolation runs with no exceptions(btk,raises if to few neighbours)")
+            )
+         .def("run_interpolation",run_interpolation_f_g,(py::arg("self"),py::arg("interpolation_parameter"),py::arg("time_axis"),py::arg("env"),py::arg("best_effort")=true),
+                doc_intro("run_interpolation interpolates region_environment temp,precip,rad.. point sources")
+                doc_intro("to a value representative for the cell.mid_point().")
+                doc_intro("")
+                doc_intro("note: This function is equivalent to")
+                doc_intro("    self.initialize_cell_environment(time_axis)")
+                doc_intro("    self.interpolate(interpolation_parameter,env)")
+                doc_parameters()
+                doc_parameter("interpolation_parameter","InterpolationParameter","contains wanted parameters for the interpolation")
+                doc_parameter("time_axis","TimeAxis","should be equal to the time-axis the region_model is prepared running for")
                 doc_parameter("env","RegionEnvironment","contains the ref: region_environment type")
                 doc_parameter("best_effort","bool","default=True, don't throw, just return True/False if problem, with best_effort, unfilled values is nan")
                 doc_returns("success","bool","True if interpolation runs with no exceptions(btk,raises if to few neighbours)")
