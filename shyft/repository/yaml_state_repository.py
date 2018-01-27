@@ -54,6 +54,10 @@ class StateSerializer:
     """
     def __init__(self, vector_type):
         """
+        The vector_type
+        need to support
+            cls.deserialize_from_str(blob_str:str)->XXXXCellStateWithIdVector
+            instance.serialize_to_str()->str
 
         Parameters
         ----------
@@ -62,12 +66,12 @@ class StateSerializer:
         self._state_vector_type = vector_type
 
     def vector_from_string(self, blob_string: str):
-        return self._state_vector_type.from_string(blob_string)
+        return self._state_vector_type.deserialize_from_str(blob_string)
 
     def to_string(self, region_model_state) -> str:
         if not isinstance(region_model_state, self._state_vector_type):
             raise StateRepositoryError(f"Wrong type passed{type(region_model_state)} expected {self._state_vector_type}")
-        return self._state_vector_type.to_string(region_model_state)
+        return region_model_state.serialize_to_str()
 
 
 class YamlStateRepository(StateRepository):
