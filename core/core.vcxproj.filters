@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <ClCompile Include="dream_optimizer.cpp">
@@ -155,14 +155,6 @@
     <ClInclude Include="dtss_cache.h">
       <Filter>dtss</Filter>
     </ClInclude>
-    <ClInclude Include="hbv_physical_snow.h">
-      <Filter>methods</Filter>
-    </ClInclude>
-    <ClInclude Include="pt_hps_k.h">
-      <Filter>method-stacks</Filter>
-    </ClInclude>
-    <ClInclude Include="pt_hps_k_cell_model.h">
-      <Filter>method-stacks</Filter>
     <ClInclude Include="dtss_db.h">
       <Filter>dtss</Filter>
     </ClInclude>
