@@ -514,8 +514,8 @@ class RegionModel(unittest.TestCase):
         for i in range(len(ms_2)):
             self.assertAlmostEqual(ms_2[i].state.kirchner.q, 200 + i)
 
-        # serialization support, to and from bytes
-
+        # feature test: serialization support, to and from bytes
+        #
         bytes = ms_2.serialize_to_bytes()  # first make some bytes out of the state
         with tempfile.TemporaryDirectory() as tmpdirname:
             file_path = str(path.join(tmpdirname, "pt_gs_k_state_test.bin"))
@@ -526,6 +526,21 @@ class RegionModel(unittest.TestCase):
         self.assertIsNotNone(ms_2x)
         for i in range(len(ms_2x)):
             self.assertAlmostEqual(ms_2x[i].state.kirchner.q, 200 + i)
+
+        # feature test: given a state-with-id-vector, get the pure state-vector
+        # suitable for rm.initial_state= <state_vector>
+        # note however that this is 'unsafe', you need to ensure that size/ordering is ok
+        # - that is the purpose of the cell-state-with-id
+        #   better solution could be to use
+        #     rm.state.apply( state_with_id) .. and maybe check the result, number of states== expected applied
+        #     rm.initial_state=rm.current_state  .. a new property to ease typical tasks
+        sv_2 = ms_2.state_vector
+        self.assertEqual(len(sv_2),len(ms_2))
+        for s,sid in zip(sv_2,ms_2):
+            self.assertAlmostEqual(s.kirchner.q,sid.state.kirchner.q)
+        # example apply, then initial state:
+        model.state.apply_state(ms_2,cids_unspecified)
+        model.initial_state=model.current_state
 
     if __name__ == "__main__":
         unittest.main()

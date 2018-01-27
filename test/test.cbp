@@ -117,7 +117,7 @@
 			<Option virtualFolder="methods/" />
 		</Unit>
 		<Unit filename="hbv_stack_test.cpp">
-			<Option virtualFolder="methods/" />
+			<Option virtualFolder="method_stacks/" />
 		</Unit>
 		<Unit filename="hbv_tank_test.cpp">
 			<Option virtualFolder="methods/" />

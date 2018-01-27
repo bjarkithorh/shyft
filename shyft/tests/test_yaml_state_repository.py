@@ -39,7 +39,7 @@ class YamlStateRepositoryTestCase(unittest.TestCase):
         return r
 
     def test_create_empty_gives_no_state(self):
-        state_repository = YamlStateRepository(self._test_state_directory, StateSerializer())
+        state_repository = YamlStateRepository(directory_path=self._test_state_directory, state_serializer=StateSerializer(PTGSKStateWithIdVector))
         self.assertIsNotNone(state_repository)
         self.assertEqual(len(state_repository.find_state()), 0, "We expect 0 states for empty repository")
 

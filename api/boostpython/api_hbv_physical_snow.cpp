@@ -38,10 +38,11 @@ namespace expose {
          .def_readwrite("surface_heat",&state::surface_heat,"surface_heat (Snow surface cold content) [J/m2]")
          .def_readwrite("swe",&state::swe,"snow water equivalent[mm]")
          .def_readwrite("sca",&state::sca,"snow covered area [0..1]")
-         .def("distribute", &state::distribute,(py::arg("self"), py::arg("p")),
+         .def("distribute", &state::distribute,(py::arg("self"), py::arg("p"),py::arg("force")=true),
              doc_intro("Distribute state according to parameter settings.")
              doc_parameters()
              doc_parameter("p", "HbvPhysicalSnowParameter", "descr")
+             doc_parameter("force","bool","default true, if false then only distribute if state vectors are of different size than parameters passed")
              doc_returns("", "None", "")
          )
          ;

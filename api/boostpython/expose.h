@@ -27,6 +27,15 @@ namespace expose {
         }
         return r;
     }
+    template <class S,class S_ID_V>
+    static shared_ptr<vector<S>> extract_cell_state_vector(const S_ID_V&v) {
+        auto r = make_shared<vector<S>>();
+        r->reserve(v->size());
+        for(const auto&sid:*v) {
+            r->push_back(sid.state);
+        }
+        return r;
+    }
 
     template<class C>
     static void cell_state_etc(const char *stack_name) {
@@ -40,10 +49,17 @@ namespace expose {
             .staticmethod("cell_state")
             ;
         char csv_name[200];sprintf(csv_name, "%sVector", cs_name);
-        class_<std::vector<CellState>, bases<>, std::shared_ptr<std::vector<CellState>> >(csv_name, "vector of cell state")
+        typedef std::vector<CellState> cell_state_with_id_vector;
+        typedef std::shared_ptr<cell_state_with_id_vector> cell_state_with_id_vector_;
+        class_<cell_state_with_id_vector, bases<>, cell_state_with_id_vector_  >(csv_name, "vector of cell state")
             .def(vector_indexing_suite<std::vector<CellState>>())
             ;
-            
+        def("extract_state_vector",extract_cell_state_vector<cstate_t,cell_state_with_id_vector_>,(py::arg("cell_state_id_vector")),
+            doc_intro("Given a cell-state-with-id-vector, returns a pure state vector that can be inserted directly into region-model")
+            doc_parameters()
+            doc_parameter("cell_state_id_vector","xStateWithIdVector","a complete consistent with region-model vector, all states, as in cell-order")
+            doc_returns("cell_state_vector","XStateVector","a vector with cell-id removed, order preserved")
+        );
         def("serialize", shyft::api::serialize_to_bytes<CellState>, args("states"), "make a blob out of the states");
         def("deserialize", shyft::api::deserialize_from_bytes<CellState>, args("bytes", "states"), "from a blob, fill in states");
     }
@@ -64,7 +80,7 @@ namespace expose {
             .def("apply_state", &CellStateHandler::apply_state,( py::arg("self"), py::arg("cell_id_state_vector"), py::arg("cids")),
                 doc_intro("apply the supplied cell-identified state to the cells,")
                 doc_intro("limited to the optionally supplied catchment id's")
-                doc_intro("If no catchment-id's specifed, it applies to all cells")
+                doc_intro("If no catchment-id's specified, it applies to all cells")
                 doc_parameters()
                 doc_parameter("cell_id_state_vector","","")
                 doc_parameter("cids","IntVector","list of catchment-id's, if empty, apply all")
@@ -121,7 +137,7 @@ namespace expose {
       cell_state_io<T>(cell_name);
     }
 
-    
+
     template <class M>
     static void model(const char *model_name,const char *model_doc) {
         char m_doc[5000];
@@ -346,7 +362,7 @@ namespace expose {
         .def("get_cells",&M::get_cells, (py::arg("self")),"cells as shared_ptr<vector<cell_t>>")
         .def("size",&M::size,(py::arg("self")),"return number of cells")
         .add_property("cells",&M::get_cells,"cells of the model")
-
+        .add_property("current_state",&M::current_state," a copy of the current model state")
          ;
 
     }

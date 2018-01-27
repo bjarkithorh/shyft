@@ -180,8 +180,8 @@ namespace shyft {
             shared_ptr<rel_hum_vec_t>       rel_hum;
 
         };
-        
-        
+
+
         ///< needs definition of the core time-series
         typedef shyft::time_series::point_ts<shyft::time_axis::fixed_dt> pts_t;
         /** \brief region_model is the calculation model for a region, where we can have
@@ -763,6 +763,12 @@ namespace shyft {
             void get_states(std::vector<state_t>& end_states) const {
                 end_states.clear();end_states.reserve(std::distance(begin(*cells), end(*cells)));
                 for(const auto& cell:*cells) end_states.emplace_back(cell.state);
+            }
+            /** \brief return current state vector as shared ptr for python exposure*/
+            std::shared_ptr<std::vector<state_t>> current_state() const {
+                auto r=std::make_shared<std::vector<state_t>>();
+                get_states(*r);
+                return r;
             }
 
             /**\brief set current state for all the cells in the model.

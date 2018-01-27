@@ -54,6 +54,8 @@ def __deserialize_from_str(s:str)->PTHSKStateWithIdVector:
 PTHSKStateWithIdVector.serialize_to_bytes = lambda self: serialize_to_bytes(self)
 PTHSKStateWithIdVector.serialize_to_str = lambda self: __serialize_to_str(self)
 PTHSKStateWithIdVector.deserialize_from_str = __deserialize_from_str
+PTHSKStateWithIdVector.state_vector = property(lambda self: extract_state_vector(self),doc=extract_state_vector.__doc__)
+
 
 def deserialize_from_bytes(bytes: ByteVector)->PTHSKStateWithIdVector:
     if not isinstance(bytes,ByteVector):
