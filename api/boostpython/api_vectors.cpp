@@ -103,7 +103,7 @@ namespace expose {
     }
 
     typedef std::vector<shyft::core::geo_point> GeoPointVector;
-    static GeoPointVector create_from_x_y_z_vectors(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double> z) {
+    static GeoPointVector create_from_x_y_z_vectors(const std::vector<double>& x, const std::vector<double>& y, const std::vector<double>& z) {
         if(!(x.size()==y.size() && y.size()==z.size()))
             throw std::runtime_error("x,y,z vectors need to have same number of elements");
         GeoPointVector r;r.reserve(x.size());

@@ -1,4 +1,5 @@
 from ._pt_hps_k import *
+from .. import ByteVector
 # Fix up types that we need attached to the model
 PTHPSKStateVector.push_back = lambda self, x: self.append(x)
 PTHPSKStateVector.size = lambda self: len(self)
@@ -39,14 +40,22 @@ PTHPSKState.vector_t = PTHPSKStateVector
 #PTHPSKState.serializer_t= PTHPSKStateIo
 
 #decorate StateWithId for serialization support
-def serialize_to_bytes(state_with_id_vector):
+def serialize_to_bytes(state_with_id_vector:PTHPSKStateWithIdVector)->ByteVector:
     if not isinstance(state_with_id_vector,PTHPSKStateWithIdVector):
         raise RuntimeError("supplied argument must be of type PTHPSKStateWithIdVector")
     return serialize(state_with_id_vector)
 
-PTHPSKStateWithIdVector.serialize_to_bytes = lambda self: serialize_to_bytes(self)
+def __serialize_to_str(state_with_id_vector:PTHPSKStateWithIdVector)->str:
+    return str(serialize_to_bytes(state_with_id_vector))  # returns hex-string formatted vector
 
-def deserialize_from_bytes(bytes):
+def __deserialize_from_str(s:str)->PTHPSKStateWithIdVector:
+    return deserialize_from_bytes(ByteVector.from_str(s))
+
+PTHPSKStateWithIdVector.serialize_to_bytes = lambda self: serialize_to_bytes(self)
+PTHPSKStateWithIdVector.serialize_to_str = lambda self: __serialize_to_str(self)
+PTHPSKStateWithIdVector.deserialize_from_str = __deserialize_from_str
+
+def deserialize_from_bytes(bytes: ByteVector)->PTHPSKStateWithIdVector:
     if not isinstance(bytes,ByteVector):
         raise RuntimeError("Supplied type must be a ByteVector, as created from serialize_to_bytes")
     states=PTHPSKStateWithIdVector()

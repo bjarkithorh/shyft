@@ -7,18 +7,6 @@ namespace expose {
     namespace py=boost::python;
     using namespace std;
 
-    template <class StateIo,class state>
-    static void state_io(const char *state_io_name) {
-        std::string (StateIo::*to_string1)(const state& ) const = &StateIo::to_string;
-        std::string (StateIo::*to_string2)(const std::vector<state>& ) const = &StateIo::to_string;
-        class_<StateIo>(state_io_name)
-         .def("from_string",&StateIo::from_string,args("str","state"), "returns true if succeeded convertion string into state")
-         .def("to_string",to_string1,args("state"),"convert a state into readable string")
-         .def("to_string",to_string2,args("state_vector"),"convert a vector of state to a string" )
-         .def("vector_from_string",&StateIo::vector_from_string,args("s"),"given string s, convert it to a state vector")
-         ;
-    }
-
     template <class T>
     static vector<double> geo_cell_data_vector(shared_ptr<vector<T>> cell_vector) {
         vector<double> r; r.reserve(shyft::api::geo_cell_data_io::size()*cell_vector->size());//Assume approx 200 chars pr. cell
@@ -26,6 +14,7 @@ namespace expose {
             shyft::api::geo_cell_data_io::push_to_vector(r,cell.geo);
         return r;
     }
+
     template <class T>
     static vector<T> create_from_geo_cell_data_vector(const vector<double>& s) {
         if(s.size()==0 || s.size()% shyft::api::geo_cell_data_io::size())
@@ -53,8 +42,8 @@ namespace expose {
         char csv_name[200];sprintf(csv_name, "%sVector", cs_name);
         class_<std::vector<CellState>, bases<>, std::shared_ptr<std::vector<CellState>> >(csv_name, "vector of cell state")
             .def(vector_indexing_suite<std::vector<CellState>>())
-
             ;
+            
         def("serialize", shyft::api::serialize_to_bytes<CellState>, args("states"), "make a blob out of the states");
         def("deserialize", shyft::api::deserialize_from_bytes<CellState>, args("bytes", "states"), "from a blob, fill in states");
     }
@@ -66,20 +55,22 @@ namespace expose {
         typedef shyft::api::state_io_handler<C> CellStateHandler;
         class_<CellStateHandler>(csh_name, "Provides functionality to extract and restore state from cells")
             .def(init<std::shared_ptr<std::vector<C>> >(args("cells"),"construct a cell state handler for the supplied cells"))
-            .def("extract_state", &CellStateHandler::extract_state, args("cids"),
-                "Extract cell state for the optionaly specified catchment ids, cids\n"
-                "Return\n"
-                "------\n"
-                " CellStateIdVector: the state for the cells\n"
+            .def("extract_state", &CellStateHandler::extract_state,( py::arg("self"),py::arg("cids")),
+                doc_intro("Extract cell state for the optionaly specified catchment ids, cids")
+                doc_parameters()
+                doc_parameter("cids","IntVector","list of catchment-id's, if empty, extract all")
+                doc_returns("cell_states","CellStateIdVector","the state with identifier for the cells")
             )
-            .def("apply_state", &CellStateHandler::apply_state,args("cell_id_state_vector","cids"),
-                "apply the supplied cell-identified state to the cells,\n"
-                "limited to the optionally supplied catchment id's\n"
-                "If no catchment-id's specifed, it applies to all cells\n"
-                "Return\n"
-                "------\n"
-                "IntVector: a list of indices into cell_id_state_vector that did not match any cells\n"
-                "\t taken into account the optionally catchment-id specification\n"
+            .def("apply_state", &CellStateHandler::apply_state,( py::arg("self"), py::arg("cell_id_state_vector"), py::arg("cids")),
+                doc_intro("apply the supplied cell-identified state to the cells,")
+                doc_intro("limited to the optionally supplied catchment id's")
+                doc_intro("If no catchment-id's specifed, it applies to all cells")
+                doc_parameters()
+                doc_parameter("cell_id_state_vector","","")
+                doc_parameter("cids","IntVector","list of catchment-id's, if empty, apply all")
+                doc_returns("not_applied_list","IntVector",
+                            "a list of indices into cell_id_state_vector that did not match any cells\n"
+                            "\t taken into account the optionally catchment-id specification\n")
             )
         ;
 

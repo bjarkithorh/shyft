@@ -62,6 +62,12 @@ IntVector.__str__ = lambda self: VectorString(self)
 
 StringVector.size = lambda self: len(self)
 
+#ByteVector to/from string
+
+
+ByteVector.__str__ = lambda self: byte_vector_to_hex_str(self)
+ByteVector.from_str = byte_vector_from_hex_str
+
 # fix up BW and pythonic syntax for TsVector
 
 TsVector.size = lambda self: len(self)
