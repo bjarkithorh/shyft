@@ -221,7 +221,7 @@ class SimulationTestCase(unittest.TestCase):
         dt = api.deltahours(24)
         n_steps = 400
         utc = api.Calendar()  # No offset gives Utc
-        t0 = utc.time(api.YMDhms(year, month, day, hour))
+        t0 = utc.time(year, month, day, hour)
         time_axis = api.TimeAxisFixedDeltaT(t0, dt, n_steps)
 
         # Some fake ids
@@ -340,7 +340,7 @@ class SimulationTestCase(unittest.TestCase):
         kirchner_param_max.kirchner.c1 *= 1.2
         kirchner_param_max.kirchner.c2 *= 1.2
         kirchner_param_max.kirchner.c3 *= 1.2
-        # kirchner_t_start = utc.time(api.YMDhms(2011, 4, 1, 0))
+        # kirchner_t_start = utc.time(2011, 4, 1, 0)
         # kirchner_time_axis = api.TimeAxisFixedDeltaT(kirchner_t_start, dt, 150)
         kirchner_time_axis = time_axis
 

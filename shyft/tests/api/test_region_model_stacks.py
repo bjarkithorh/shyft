@@ -41,7 +41,7 @@ class RegionModel(unittest.TestCase):
 
     def test_source_uid(self):
         cal = api.Calendar()
-        time_axis = api.TimeAxisFixedDeltaT(cal.time(api.YMDhms(2015, 1, 1, 0, 0, 0)), api.deltahours(1), 240)
+        time_axis = api.TimeAxisFixedDeltaT(cal.time(2015, 1, 1, 0, 0, 0), api.deltahours(1), 240)
         mid_point = api.GeoPoint(1000, 1000, 100)
         precip_source = self._create_constant_geo_ts(api.PrecipitationSource, mid_point, time_axis.total_period(), 5.0)
         self.assertIsNotNone(precip_source.uid)
@@ -60,7 +60,7 @@ class RegionModel(unittest.TestCase):
 
     def test_create_region_environment(self):
         cal = api.Calendar()
-        time_axis = api.TimeAxisFixedDeltaT(cal.time(api.YMDhms(2015, 1, 1, 0, 0, 0)), api.deltahours(1), 240)
+        time_axis = api.TimeAxisFixedDeltaT(cal.time(2015, 1, 1, 0, 0, 0), api.deltahours(1), 240)
         re = self.create_dummy_region_environment(time_axis, api.GeoPoint(1000, 1000, 100))
         self.assertIsNotNone(re)
         self.assertEqual(len(re.radiation), 1)
